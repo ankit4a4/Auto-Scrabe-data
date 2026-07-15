@@ -3,7 +3,7 @@ const { extractPostLinksWithDates } = require("./linkExtractor");
 const { parseDateSafe } = require("../utils/dateUtils");
 const config = require("../config");
 
-// "Load More" pattern (naya content EXISTING content ke aage APPEND hota hai)
+// "Load More" pattern (new content is APPENDED after the EXISTING content)
 const LOAD_MORE_SELECTORS = [
   "button:has-text('Load More')",
   "button:has-text('Load more')",
@@ -21,10 +21,10 @@ const LOAD_MORE_SELECTORS = [
   "[id*='loadmore']",
 ];
 
-// "Next page" pattern (numbered pagination jaisa forbesindia.com pe hai -
-// content REPLACE hota hai, URL change nahi hota). Hum ye NAHI check karte
-// ki site kaunsa mechanism (React state/AJAX/whatever) use kar rahi hai -
-// bas ek human jaisa "Next" button/arrow dhoondte hain aur click karte hain.
+// "Next page" pattern (numbered pagination like forbesindia.com has -
+// content is REPLACED, URL doesn't change). We do NOT check what
+// mechanism (React state/AJAX/whatever) the site is using -
+// we just find a human-like "Next" button/arrow and click it.
 const NEXT_PAGE_SELECTORS = [
   "[aria-label='Next']",
   "[aria-label*='Next' i]",
@@ -42,7 +42,7 @@ const NEXT_PAGE_SELECTORS = [
   "a:has-text('Next')",
 ];
 
-// Do arrays ke sequence me har round try karte hain - jo bhi mile pehle usko click karo
+// Try each round in the sequence of both arrays - click whichever is found first
 const ALL_ADVANCE_SELECTORS = [...LOAD_MORE_SELECTORS, ...NEXT_PAGE_SELECTORS];
 
 function linksSignature(links) {
@@ -50,20 +50,20 @@ function linksSignature(links) {
 }
 
 /**
- * Category page pe pagination JS-driven ho (URL change nahi hota - chahe
- * "Load More" button ho (append-style) ya numbered "Next" arrow ho
- * (replace-style, jaisa forbesindia.com pe hai) - is function ko FARAQ NAHI
- * PADTA ki underlying mechanism kya hai. Bas itna karta hai:
- *   1. Current content ka "signature" (post-links ki list) capture karo
- *   2. Koi bhi advance-control (Load More YA Next arrow) dhoondke click karo
- *   3. Content ka signature change hua ya nahi check karo
- *   4. Agar change hua -> naye links collect karo, dobara try karo
- *   5. Agar nahi hua, ya koi control hi nahi mila -> ruk jaao
+ * When pagination on a category page is JS-driven (URL doesn't change -
+ * whether it's a "Load More" button (append-style) or a numbered "Next"
+ * arrow (replace-style, like forbesindia.com has) - this function DOESN'T
+ * CARE what the underlying mechanism is. It just does this:
+ *   1. Capture the "signature" (list of post-links) of the current content
+ *   2. Find any advance-control (Load More OR Next arrow) and click it
+ *   3. Check whether the content's signature changed or not
+ *   4. If it changed -> collect new links, try again
+ *   5. If not, or if no control was found at all -> stop
  *
- * Date-aware early stop: agar kisi step pe mile posts ki date-hint
- * startDate se purani ho jaaye, to aage click karna band kar dete hain
- * (chronological listing maan ke) - kyunki category me 100 pages tak ho
- * sakti hain, hume sabko click karke nahi jaana.
+ * Date-aware early stop: if the date-hint of posts found at some step turns
+ * out to be older than startDate, we stop clicking further (assuming a
+ * chronological listing) - since a category can have up to 100 pages,
+ * we shouldn't need to click through all of them.
  */
 async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProgress }) {
   const log = (msg) => onProgress && onProgress(msg);
@@ -81,7 +81,7 @@ async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProg
     try {
       await page.waitForLoadState("networkidle", { timeout: 5000 });
     } catch {
-      /* persistent background activity - ignore, aage badho */
+      /* persistent background activity - ignore, continue */
     }
 
     for (let step = 0; step <= maxSteps; step++) {
@@ -101,16 +101,16 @@ async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProg
       }
 
       log(
-        `"Next"/pagination step ${step + 1}: ${links.length} links mile, ${newCount} naye ` +
-          `(total ab tak: ${collected.size})`
+        `"Next"/pagination step ${step + 1}: found ${links.length} links, ${newCount} new ` +
+          `(total so far: ${collected.size})`
       );
 
       if (stopEarly) {
-        log(`Range se purane posts mil gaye, "Next" click karna band kar rahe hain`);
+        log(`Found posts older than the range, stopping "Next" clicks`);
         break;
       }
 
-      if (step >= maxSteps) break; // safety cap pahunch gaya
+      if (step >= maxSteps) break; // safety cap reached
 
       const signatureBefore = linksSignature(links);
       const urlBefore = page.url();
@@ -134,9 +134,9 @@ async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProg
           clicked = true;
           stepsDone++;
 
-          // Content change hone ka wait karo - signature (post-links list)
-          // change hone tak, ya max 5 second (jo pehle ho). Ye append-style
-          // aur replace-style dono pagination ke liye kaam karta hai.
+          // Wait for the content to change - until the signature (post-links
+          // list) changes, or max 5 seconds (whichever comes first). This
+          // works for both append-style and replace-style pagination.
           contentActuallyChanged = await page
             .waitForFunction(
               (prevSignature) => {
@@ -152,10 +152,10 @@ async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProg
             .then(() => true)
             .catch(() => false);
 
-          await page.waitForTimeout(700); // thoda extra settle time
+          await page.waitForTimeout(700); // a bit of extra settle time
           break;
         } catch {
-          /* is selector se click nahi hui, agla try karo */
+          /* click didn't work with this selector, try the next one */
         }
       }
 
@@ -166,16 +166,16 @@ async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProg
       );
 
       if (!clicked) {
-        log(`Step ${step + 1} ke baad koi "Load More"/"Next" control nahi mila - pagination end lag raha hai`);
+        log(`No "Load More"/"Next" control found after step ${step + 1} - pagination looks like it has ended`);
         break;
       }
 
       if (!contentActuallyChanged) {
-        // Click hua (element mila, click bhi hua), lekin content wahi ka wahi
-        // reh gaya - matlab ye ab wahi element baar-baar click ho raha hoga
-        // bina asar ke (jaise disabled button, ya galat element match ho raha
-        // hai). Isse aage badhna faayda nahi dega, isliye ruk jaate hain.
-        log(`Click hua lekin content change nahi hua - pagination yahi tak limited hai, ruk rahe hain`);
+        // The click happened (element was found, click succeeded), but the
+        // content stayed the same - meaning this same element would keep
+        // getting clicked repeatedly with no effect (like a disabled button,
+        // or a wrong element match). Continuing further won't help, so we stop.
+        log(`Click happened but content didn't change - pagination is limited to this point, stopping`);
         break;
       }
     }

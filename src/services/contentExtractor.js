@@ -3,9 +3,9 @@ const { Readability } = require("@mozilla/readability");
 const cheerio = require("cheerio");
 
 /**
- * Post ke HTML se clean article text + basic metadata nikalta hai.
- * Readability ads/sidebar/nav/footer hata ke sirf main content deta hai,
- * isse Gemini ko kam aur saaf text jaata hai (cost + accuracy dono behtar).
+ * Extracts clean article text + basic metadata from a post's HTML.
+ * Readability removes ads/sidebar/nav/footer and gives just the main content,
+ * so Gemini receives less and cleaner text (better for both cost + accuracy).
  */
 function extractArticle(html, url) {
   let title = null;
@@ -22,10 +22,10 @@ function extractArticle(html, url) {
       excerpt = article.excerpt;
     }
   } catch (err) {
-    // Readability fail ho jaye to fallback niche hai
+    // If Readability fails, the fallback is below
   }
 
-  // Fallback agar Readability kuch extract na kar paya
+  // Fallback if Readability couldn't extract anything
   if (!textContent || textContent.length < 100) {
     const $ = cheerio.load(html);
     $("script, style, nav, footer, header, noscript").remove();
@@ -33,7 +33,7 @@ function extractArticle(html, url) {
     if (!title) title = $("title").text().trim() || null;
   }
 
-  // Extra metadata (jitna easily mil jaye)
+  // Extra metadata (whatever is easily available)
   const $ = cheerio.load(html);
   const metaDescription =
     $('meta[name="description"]').attr("content") ||
@@ -45,11 +45,11 @@ function extractArticle(html, url) {
     $("article img").first().attr("src") ||
     null;
 
-  // Publish date - date-range filtering ab isi field pe depend karti hai,
-  // isliye jitne zyada common sources ho sakein utne try karte hain
-  // (order = reliability ke hisaab se, sabse trustworthy pehle). News/magazine
-  // sites (Forbes jaisi) alag-alag CMS/plugins (Parse.ly, Sailthru, custom)
-  // use karte hain, isliye list lambi rakhi hai.
+  // Publish date - date-range filtering now depends on this field,
+  // so we try as many common sources as possible
+  // (order = by reliability, most trustworthy first). News/magazine
+  // sites (like Forbes) use different CMS/plugins (Parse.ly, Sailthru, custom),
+  // so the list is kept long.
   let publishDate =
     $('meta[property="article:published_time"]').attr("content") ||
     $('meta[property="og:article:published_time"]').attr("content") ||
@@ -57,17 +57,17 @@ function extractArticle(html, url) {
     $('meta[name="publication_date"]').attr("content") ||
     $('meta[name="date"]').attr("content") ||
     $('meta[name="DC.date.issued"]').attr("content") ||
-    $('meta[name="parsely-pub-date"]').attr("content") || // Parse.ly - bahut common hai news/magazine sites me
+    $('meta[name="parsely-pub-date"]').attr("content") || // Parse.ly - very common on news/magazine sites
     $('meta[name="sailthru.date"]').attr("content") ||
     $('meta[itemprop="datePublished"]').attr("content") ||
     $('meta[itemprop="dateCreated"]').attr("content") ||
     $("time[datetime]").first().attr("datetime") ||
     null;
 
-  // Fallback: JSON-LD structured data me date hona common hai, lekin kai
-  // sites isko nested "@graph" array ke andar rakhte hain (sirf top-level
-  // check karna kaafi nahi hai) - isliye recursively poore JSON tree me
-  // dhoondte hain.
+  // Fallback: it's common for JSON-LD structured data to have the date, but
+  // many sites keep it nested inside an "@graph" array (checking only the
+  // top-level isn't enough) - so we search recursively through the whole
+  // JSON tree.
   if (!publishDate) {
     function findDateInJsonLd(node) {
       if (!node || typeof node !== "object") return null;
@@ -96,10 +96,10 @@ function extractArticle(html, url) {
     });
   }
 
-  // Aakhri fallback: <time> tag ka visible text (datetime attribute na ho to),
-  // ya common class-based date elements (kai custom-CMS sites, jaise Forbes
-  // jaisi magazine sites, date ko sirf visible text me dikhate hain, koi
-  // structured meta/JSON-LD nahi dete)
+  // Last fallback: <time> tag's visible text (if no datetime attribute),
+  // or common class-based date elements (many custom-CMS sites, like Forbes-
+  // style magazine sites, only show the date as visible text, with no
+  // structured meta/JSON-LD)
   if (!publishDate) {
     const timeText = $("time").first().text().trim();
     if (timeText) {
@@ -116,11 +116,11 @@ function extractArticle(html, url) {
     }
   }
 
-  // Bahut common pattern Indian news/magazine sites me (Forbes India jaisi):
-  // plain text me "First Published: Jun 26, 2026, 15:51" ya
-  // "Last Updated: Jun 26, 2026, 17:19 IST" likha hota hai, kisi bhi
-  // structured tag/class ke bina. "First Published" ko priority dete hain
-  // (asli publish-date), "Last Updated" ko fallback ke roop me.
+  // A very common pattern on Indian news/magazine sites (like Forbes India):
+  // plain text says "First Published: Jun 26, 2026, 15:51" or
+  // "Last Updated: Jun 26, 2026, 17:19 IST", without any
+  // structured tag/class. We prioritize "First Published"
+  // (the real publish-date), with "Last Updated" as a fallback.
   if (!publishDate) {
     const bodyText = $("body").text();
     const datePattern =
@@ -136,8 +136,8 @@ function extractArticle(html, url) {
     const match = publishedMatch || updatedMatch;
     if (match) {
       const rawDate = match[1].trim();
-      // "IST" explicitly text me likha hai to wahi offset use karo (guess
-      // nahi kar rahe - source ne khud bataya hai ye Indian Standard Time hai)
+      // If "IST" is explicitly written in the text, use that offset (not
+      // guessing - the source itself has stated this is Indian Standard Time)
       publishDate = match[2] ? `${rawDate} GMT+0530` : rawDate;
     }
   }
@@ -150,7 +150,7 @@ function extractArticle(html, url) {
   return {
     url,
     title,
-    textContent: textContent.slice(0, 12000), // Gemini ko bahut zyada text na bheje
+    textContent: textContent.slice(0, 12000), // Don't send too much text to Gemini
     excerpt,
     metaDescription,
     featuredImage,

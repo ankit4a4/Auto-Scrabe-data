@@ -1,15 +1,15 @@
-// Date strings har jagah se alag format me aa sakti hain (ISO datetime
-// attribute, "July 10, 2026" jaisa human-readable text, etc.) - JS ka
-// built-in Date parser in-mein se zyada ko handle kar leta hai.
-// Guessing kabhi nahi karte - agar parse na ho, to null return hota hai
-// aur us post ko "date unknown" maan ke skip kiya jaata hai (safe default).
+// Date strings can come in different formats from different places (ISO
+// datetime attribute, human-readable text like "July 10, 2026", etc.) -
+// JS's built-in Date parser handles most of these.
+// We never guess - if parsing fails, null is returned and that post is
+// treated as "date unknown" and skipped (safe default).
 function parseDateSafe(value) {
   if (!value) return null;
   const d = new Date(value);
   return isNaN(d.getTime()) ? null : d;
 }
 
-// Range ke start ke liye din ki shuruaat (00:00:00.000)
+// Start of the day for the range's start (00:00:00.000)
 function startOfDay(dateStr) {
   const d = parseDateSafe(dateStr);
   if (!d) return null;
@@ -17,8 +17,8 @@ function startOfDay(dateStr) {
   return d;
 }
 
-// Range ke end ke liye din ka aakhri pal (23:59:59.999) - taaki us poore
-// din ke posts bhi range me shamil ho jaayein
+// The last moment of the day for the range's end (23:59:59.999) - so
+// posts throughout that entire day are also included in the range
 function endOfDay(dateStr) {
   const d = parseDateSafe(dateStr);
   if (!d) return null;

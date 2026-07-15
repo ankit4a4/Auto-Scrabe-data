@@ -1,8 +1,8 @@
 const cheerio = require("cheerio");
 const { fetchStatic, fetchDynamic } = require("./fetchers");
 
-// Domain-wise cache taaki baar baar detection na karni pade
-// (production me isko MongoDB/file me persist kar sakte ho)
+// Domain-wise cache so detection doesn't need to run repeatedly
+// (in production this could be persisted to MongoDB/a file)
 const domainModeCache = new Map();
 
 function getDomain(url) {
@@ -13,13 +13,13 @@ function getDomain(url) {
   }
 }
 
-// Static HTML me "real" content mil raha hai ya nahi, ye rough heuristic se check karte hain
+// Checks whether static HTML has "real" content or not, using a rough heuristic
 function looksLikeRealContent(html) {
   const $ = cheerio.load(html);
   $("script, style, noscript").remove();
   const bodyText = $("body").text().replace(/\s+/g, " ").trim();
 
-  // Bahut kam text = likely JS-rendered site (React/Vue/Angular/Next.js CSR)
+  // Very little text = likely a JS-rendered site (React/Vue/Angular/Next.js CSR)
   if (bodyText.length < 200) return false;
 
   // Common SPA "empty shell" markers
@@ -37,9 +37,9 @@ function looksLikeRealContent(html) {
 }
 
 /**
- * Given a URL, decide karo "static" (Cheerio se kaam chalega)
- * ya "dynamic" (Playwright chahiye), aur wahi HTML return kar do
- * (double fetching se bachne ke liye).
+ * Given a URL, decide whether it's "static" (Cheerio will do the job)
+ * or "dynamic" (Playwright is needed), and return that same HTML
+ * (to avoid double fetching).
  */
 async function fetchWithAutoDetect(url) {
   const domain = getDomain(url);
@@ -50,7 +50,7 @@ async function fetchWithAutoDetect(url) {
     return { html, mode: "dynamic" };
   }
 
-  // Pehle static try karo (fast + light)
+  // Try static first (fast + light)
   let staticHtml = null;
   try {
     staticHtml = await fetchStatic(url);
@@ -63,7 +63,7 @@ async function fetchWithAutoDetect(url) {
     return { html: staticHtml, mode: "static" };
   }
 
-  // Static se kaam nahi bana -> Playwright fallback
+  // Static didn't work -> Playwright fallback
   const dynamicHtml = await fetchDynamic(url);
   domainModeCache.set(domain, "dynamic");
   return { html: dynamicHtml, mode: "dynamic" };

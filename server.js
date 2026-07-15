@@ -12,10 +12,10 @@ app.use(express.static("public"));
 app.use("/api", scrapeRoutes);
 
 const server = app.listen(config.port, () => {
-  console.log(`Server chal raha hai: http://localhost:${config.port}`);
+  console.log(`Server is running: http://localhost:${config.port}`);
 });
 
-// Graceful shutdown - Playwright browser ko properly close karo
+// Graceful shutdown - properly close the Playwright browser
 process.on("SIGINT", async () => {
   console.log("\nShutting down...");
   await closeBrowser();

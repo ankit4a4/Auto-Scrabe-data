@@ -1,6 +1,6 @@
 const cheerio = require("cheerio");
 
-// URL patterns jo generally post/article NAHI hote - inhe exclude karte hain
+// URL patterns that are generally NOT a post/article - these are excluded
 const EXCLUDE_PATTERNS = [
   /\/category\//i,
   /\/tag\//i,
@@ -21,11 +21,11 @@ const EXCLUDE_PATTERNS = [
   /^javascript:/i,
 ];
 
-// Static/utility pages jo bilkul post-jaisi single-segment slug rakhte hain
-// (jaise example.com/magazine/, example.com/about-us/) - ye article nahi hote,
-// isliye exact-slug match pe exclude karte hain. Ye sirf EXACT match hai
-// (single path segment), isliye asli posts jaise "meet-the-founder-of-xyz-company"
-// isse affect nahi honge - sirf generic nav pages jaise "/meet-the-founder/" exclude honge.
+// Static/utility pages that have a single-segment slug just like a post
+// (e.g. example.com/magazine/, example.com/about-us/) - these are not articles,
+// so they're excluded on exact-slug match. This is an EXACT match only
+// (single path segment), so real posts like "meet-the-founder-of-xyz-company"
+// are not affected - only generic nav pages like "/meet-the-founder/" get excluded.
 const STATIC_PAGE_SLUGS = [
   "about", "about-us", "aboutus", "contact", "contact-us", "contactus",
   "magazine", "advertise", "advertise-with-us", "subscribe", "subscription",
@@ -45,17 +45,17 @@ function isExcluded(url) {
 
 function isStaticPage(urlObj) {
   const segments = urlObj.pathname.split("/").filter(Boolean);
-  // Sirf ek hi path segment ho aur wo known static-page slug ho
+  // Only a single path segment, and it's a known static-page slug
   if (segments.length === 1 && STATIC_PAGE_SLUGS.includes(segments[0].toLowerCase())) {
     return true;
   }
   return false;
 }
 
-// Category page ki listing me har post-card ke paas kabhi kabhi date dikhi
-// hoti hai (jaise WordPress ka <time datetime="..."> tag, ya ".date"/".entry-date"
-// jaisi class). Isse humein pagination early-stop karne me help milti hai -
-// lekin FINAL date-range decision hamesha post ke apne page se milegi (accurate).
+// A date is sometimes shown near each post-card in a category page's listing
+// (like WordPress's <time datetime="..."> tag, or a ".date"/".entry-date"
+// style class). This helps us early-stop pagination -
+// but the FINAL date-range decision always comes from the post's own page (accurate).
 function findDateHintNear(el, $) {
   const timeWithAttr = $(el).find("time[datetime]").first().attr("datetime");
   if (timeWithAttr) return timeWithAttr;
@@ -74,14 +74,14 @@ function findDateHintNear(el, $) {
 }
 
 /**
- * PRIMARY STRATEGY: category/archive page pe posts aksar <article> tag ya
- * "post"/"entry" class wale container me wrapped hote hain. Wahi se link
- * nikalna sabse reliable hai (nav/footer/sidebar/static-page links khud hi
- * exclude ho jaate hain kyunki wo articles ke bahar hote hain).
+ * PRIMARY STRATEGY: on a category/archive page, posts are usually wrapped
+ * in an <article> tag or a "post"/"entry" class container. Extracting links
+ * from there is the most reliable (nav/footer/sidebar/static-page links get
+ * excluded automatically since they're outside the articles).
  *
- * Ab { url, dateHint } dono return karta hai - dateHint raw string hai
- * (parse baad me pipeline karta hai), null agar category listing me date
- * nahi dikhi.
+ * Now returns both { url, dateHint } - dateHint is a raw string
+ * (parsed later by the pipeline), null if no date is shown in the
+ * category listing.
  */
 function extractFromArticleContainers($, categoryUrl, baseHost) {
   const found = new Map(); // url -> dateHint (raw string ya null)
@@ -90,8 +90,8 @@ function extractFromArticleContainers($, categoryUrl, baseHost) {
     "[class*='post-'], [class*='entry-'], [class*='article-']";
 
   $(containerSelectors).each((_, el) => {
-    // Heading ke andar ka link priority - ye almost hamesha post ka
-    // permalink hota hai (theme chahe koi bhi ho)
+    // Prioritize the link inside the heading - this is almost always the
+    // post's permalink (regardless of theme)
     let href =
       $(el).find("h1 a, h2 a, h3 a, h4 a").first().attr("href") ||
       $(el).find("a").first().attr("href");
@@ -120,10 +120,11 @@ function extractFromArticleContainers($, categoryUrl, baseHost) {
 }
 
 /**
- * FALLBACK STRATEGY: agar site me <article>/.post jaisa structure nahi mila
- * (custom/unusual theme), to purana broad approach use karo - saare same-domain
- * links, minus excluded patterns aur static pages. Date hint yahan generally
- * nahi milti (broad links me container context clear nahi hota), isliye null.
+ * FALLBACK STRATEGY: if the site doesn't have an <article>/.post style
+ * structure (custom/unusual theme), use the old broad approach - all
+ * same-domain links, minus excluded patterns and static pages. A date hint
+ * generally isn't available here (broad links don't have clear container
+ * context), so it's null.
  */
 function extractFromAllLinks($, categoryUrl, baseHost) {
   const found = new Map();
@@ -159,12 +160,12 @@ function extractFromAllLinks($, categoryUrl, baseHost) {
 }
 
 /**
- * Category page ke HTML se post links + (agar mile to) date hints nikalta hai.
- * Pehle article-container based (accurate) try karta hai, agar wahan se
- * kuch na mile (bahut kam/zero links) to broad fallback pe chala jaata hai.
+ * Extracts post links + (if found) date hints from a category page's HTML.
+ * First tries the article-container based approach (accurate), and if
+ * nothing is found there (very few/zero links) falls back to the broad approach.
  *
- * Return: [{ url, dateHint }] - dateHint null ho sakta hai agar listing me
- * date nahi dikhi (is case me final filtering post ke apne page se hogi).
+ * Returns: [{ url, dateHint }] - dateHint can be null if no date is shown in
+ * the listing (in that case, the final filtering happens from the post's own page).
  */
 function extractPostLinksWithDates(html, categoryUrl) {
   const $ = cheerio.load(html);
@@ -178,8 +179,8 @@ function extractPostLinksWithDates(html, categoryUrl) {
 }
 
 /**
- * Backward-compatible helper - sirf URLs chahiye ho (date hint ki zaroorat
- * nahi) to isse use karo.
+ * Backward-compatible helper - use this if you only need URLs (no date
+ * hint needed).
  */
 function extractPostLinks(html, categoryUrl) {
   return extractPostLinksWithDates(html, categoryUrl).map((item) => item.url);

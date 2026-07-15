@@ -7,7 +7,7 @@ const { clickThroughPagination } = require("./loadMoreExpander");
 const { parseDateSafe, formatDateForLog } = require("../utils/dateUtils");
 const config = require("../config");
 
-// Chhota concurrency-limiter (bina extra library ke)
+// Small concurrency-limiter (without any extra library)
 async function runWithLimit(items, limit, worker) {
   const results = [];
   let index = 0;
@@ -30,16 +30,16 @@ async function runWithLimit(items, limit, worker) {
 }
 
 /**
- * Category pages ko sequentially crawl karta hai (page 1, 2, 3, ...) aur har
- * page se post links + (agar mile to) date hints nikalta hai.
+ * Crawls category pages sequentially (page 1, 2, 3, ...) and extracts post
+ * links + (if available) date hints from each page.
  *
- * Efficiency trick: agar category listing me date dikh rahi ho (WordPress
- * jaisi themes me aksar hoti hai), aur wo date startDate se PURANI ho, to
- * hum maan lete hain ki (chronological listing hone ki wajah se) aage ke
- * pages aur bhi purane posts honge - isliye us page ke baad crawl rok dete
- * hain. Agar listing me date na dikhe (dateHint null), to hum safe side
- * lete hain aur maxPagesToCrawl tak crawl karte rehte hain, final decision
- * har post ke apne page se accurate date nikaal ke lete hain.
+ * Efficiency trick: if the category listing shows a date (common in
+ * WordPress-style themes), and that date is OLDER than startDate, we assume
+ * (since it's a chronological listing) that the following pages will be
+ * even older - so we stop crawling after that page. If the listing doesn't
+ * show a date (dateHint is null), we play it safe and keep crawling up to
+ * maxPagesToCrawl, and the final decision is made from each post's own page
+ * for an accurate date.
  */
 async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1Html, log }) {
   const seen = new Set();
@@ -60,7 +60,7 @@ async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1H
         const result = await fetchWithAutoDetect(pageUrl);
         html = result.html;
       } catch (err) {
-        log(`Page ${pageNum} load nahi ho paya, ruk rahe hain: ${err.message}`);
+        log(`Page ${pageNum} could not be loaded, stopping: ${err.message}`);
         break;
       }
     }
@@ -79,34 +79,34 @@ async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1H
       if (parsedHint) {
         hadAnyDateHint = true;
         if (parsedHint < startDate) {
-          // Range se purana - is post ko candidate mat banao, aur agla
-          // page bhi shayad aur purana hoga (chronological listing maan ke)
+          // Older than the range - don't make this post a candidate, and
+          // the next page will likely be even older too (chronological listing assumption)
           stopAfterThisPage = true;
           continue;
         }
       }
 
-      // Range ke andar hai, ya date pata nahi (post ke apne page se confirm hoga)
+      // Within range, or date unknown (will be confirmed from the post's own page)
       candidates.push({ url, dateHint: parsedHint });
     }
 
     log(
-      `Page ${pageNum}: ${linksWithDates.length} post links mile, ${newOnThisPage} naye ` +
-        `(candidates ab tak: ${candidates.length}${hadAnyDateHint ? "" : ", listing me date nahi dikhi"})`
+      `Page ${pageNum}: found ${linksWithDates.length} post links, ${newOnThisPage} new ` +
+        `(candidates so far: ${candidates.length}${hadAnyDateHint ? "" : ", no date shown in listing"})`
     );
 
     if (pageNum > 1 && newOnThisPage === 0) {
-      // URL-based pagination se kuch naya nahi mila. Do possibilities hain:
-      // (a) sach me pagination khatam ho gayi, YA
-      // (b) ye site JS-driven pagination use karti hai jahan URL change hi
-      //     nahi hota - chahe "Load More" button ho (append-style) ya
-      //     numbered "Next" arrow ho (replace-style, jaisa forbesindia.com
-      //     pe hai) - hume iske underlying mechanism se farq nahi padta,
-      //     hum bas ek human jaisa control dhoondke click karte hain.
-      // Sirf pehli baar (pageNum===2) hi ye fallback try karte hain - agar
-      // wahan bhi kuch naya na mile, to sach me pagination khatam maan lete hain.
+      // Nothing new found via URL-based pagination. Two possibilities:
+      // (a) pagination genuinely ended, OR
+      // (b) this site uses JS-driven pagination where the URL doesn't
+      //     change at all - whether it's a "Load More" button (append-style)
+      //     or a numbered "Next" arrow (replace-style, like forbesindia.com
+      //     has) - it doesn't matter what the underlying mechanism is,
+      //     we just find a human-like control and click it.
+      // We only try this fallback the first time (pageNum===2) - if
+      // nothing new is found there either, we assume pagination truly ended.
       if (pageNum === 2) {
-        log(`Page 2 URL se koi naya post nahi mila - JS-driven pagination (Load More/Next button) check kar rahe hain...`);
+        log(`No new post found via page 2 URL - checking JS-driven pagination (Load More/Next button)...`);
         try {
           const { candidates: clickCandidates, stepsDone } = await clickThroughPagination({
             categoryUrl,
@@ -122,27 +122,27 @@ async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1H
             newFromExpansion++;
 
             if (dateHint && dateHint < startDate) {
-              continue; // range se purana, candidate mat banao
+              continue; // older than the range, don't make it a candidate
             }
             candidates.push({ url, dateHint });
           }
 
           if (stepsDone > 0) {
-            log(`Click-based pagination se ${newFromExpansion} naye posts mile (candidates ab tak: ${candidates.length})`);
+            log(`Found ${newFromExpansion} new posts via click-based pagination (candidates so far: ${candidates.length})`);
           } else {
-            log(`Koi click-based pagination control nahi mila - pagination end lag raha hai`);
+            log(`No click-based pagination control found - pagination looks like it has ended`);
           }
         } catch (err) {
-          log(`Click-based pagination try karte waqt error: ${err.message}`);
+          log(`Error while trying click-based pagination: ${err.message}`);
         }
       } else {
-        log(`Page ${pageNum} pe koi naya post nahi mila, pagination end lag raha hai`);
+        log(`No new post found on page ${pageNum}, pagination looks like it has ended`);
       }
       break;
     }
 
     if (stopAfterThisPage) {
-      log(`Page ${pageNum} pe range se purane posts mil gaye, aage crawl karna band kar rahe hain`);
+      log(`Found posts older than the range on page ${pageNum}, stopping further crawling`);
       break;
     }
 
@@ -153,54 +153,55 @@ async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1H
 }
 
 /**
- * Main entry point: category URL + startDate/endDate (JS Date objects,
- * inclusive range) leta hai. Category pages crawl karke us date-range ke
- * posts dhoondta hai aur unse structured data nikaalta hai.
+ * Main entry point: takes categoryUrl + startDate/endDate (JS Date objects,
+ * inclusive range). Crawls the category pages and finds posts within that
+ * date range, then extracts structured data from them.
  *
- * Date matching 2-step hai:
- *  1. Category listing se date-hint milti hai to usse pagination early-stop
- *     hota hai (efficiency ke liye)
- *  2. FINAL decision hamesha post ke apne page ke actual publish-date se
- *     hoti hai (accurate) - listing hint sirf ek estimate thi
+ * Date matching is a 2-step process:
+ *  1. If a date-hint is available from the category listing, it's used for
+ *     early-stopping the pagination (for efficiency)
+ *  2. The FINAL decision is always made from the post's own page's actual
+ *     publish-date (accurate) - the listing hint was only an estimate
  *
- * Agar kisi post ki date bilkul pata na chale (na listing me, na post page
- * pe), to us post ko "date unknown" maan ke SKIP kiya jaata hai - guess
- * kabhi nahi karte.
+ * If a post's date can't be determined at all (neither in the listing nor
+ * on the post page), that post is SKIPPED as "date unknown" - it is never
+ * guessed.
  *
- * Save condition (per company): ownerNames me se kam se kam ek naam AUR
- * businessName - DONO zaroor hone chahiye. City sirf bonus field hai.
- * Business-relevance filter: movie/entertainment/general-news jaisa
- * non-business content AI khud filter kar deta hai.
- * Partnership case: ownerNames ek ARRAY hai, 2+ owners bhi aa sakte hain.
- * Multi-company case: ek hi post/article se multiple companies (roundup
- * articles) alag-alag entries banati hain, kabhi mix nahi hoti.
+ * Save condition (per company): at least one owner name OR a businessName
+ * is required - either one is enough, both are not mandatory. City is just
+ * a bonus field.
+ * Business-relevance filter: non-business content like movie/entertainment/
+ * general-news is filtered out by the AI itself.
+ * Partnership case: ownerNames is an ARRAY, so 2+ owners can also come in.
+ * Multi-company case: a single post/article can produce multiple companies
+ * (roundup articles) as separate entries - they are never mixed together.
  */
 async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }) {
   const log = (msg) => onProgress && onProgress(msg);
 
-  log(`Category page load ho raha hai: ${categoryUrl}`);
+  log(`Loading category page: ${categoryUrl}`);
   const { html: page1Html } = await fetchWithAutoDetect(categoryUrl);
 
-  log(`Target date range: ${formatDateForLog(startDate)} se ${formatDateForLog(endDate)} tak, pages crawl karna shuru...`);
+  log(`Target date range: ${formatDateForLog(startDate)} to ${formatDateForLog(endDate)}, starting to crawl pages...`);
   const candidates = await collectPostsInDateRange({ categoryUrl, startDate, endDate, page1Html, log });
 
   if (candidates.length === 0) {
-    log(`Is date range ke aas-paas koi post nahi mila.`);
+    log(`No post found around this date range.`);
     return { totalPostsFound: 0, totalSaved: 0, entries: [], skipReasons: {} };
   }
 
   let targetLinks = candidates;
   if (candidates.length > config.maxDateRangePosts) {
     log(
-      `Range me ${candidates.length} candidate posts mile, jo max limit (${config.maxDateRangePosts}) se zyada hai. ` +
-        `Sirf pehle ${config.maxDateRangePosts} process honge - chhota range try karo ya MAX_DATE_RANGE_POSTS badhao.`
+      `Found ${candidates.length} candidate posts in range, which is more than the max limit (${config.maxDateRangePosts}). ` +
+        `Only the first ${config.maxDateRangePosts} will be processed - try a smaller range or increase MAX_DATE_RANGE_POSTS.`
     );
     targetLinks = candidates.slice(0, config.maxDateRangePosts);
   }
 
-  log(`${targetLinks.length} posts process honge is date range ke liye`);
+  log(`${targetLinks.length} posts will be processed for this date range`);
 
-  // Har post ko process karo: fetch -> actual date confirm -> content extract -> AI extract -> condition check
+  // Process each post: fetch -> confirm actual date -> extract content -> AI extract -> condition check
   const skipReasons = {
     noContent: 0,
     aiError: 0,
@@ -232,12 +233,12 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
         return null;
       }
 
-      // FINAL date check - post ke apne page ke actual publish-date se
-      // (category listing wali date-hint sirf ek estimate thi, ye asli hai)
+      // FINAL date check - from the post's own page's actual publish-date
+      // (the category listing date-hint was only an estimate, this is the real one)
       const actualDate = parseDateSafe(article.publishDate);
       if (!actualDate) {
         skipReasons.dateUnknown++;
-        return null; // date confirm nahi ho payi - guess nahi karte, safe side skip
+        return null; // date could not be confirmed - never guess, skip to be safe
       }
       if (actualDate < startDate || actualDate > endDate) {
         skipReasons.outOfDateRange++;
@@ -246,18 +247,19 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
 
       let companies;
       try {
-        companies = await extractEntities(article); // ARRAY milta hai - har company alag entry
+        companies = await extractEntities(article); // returns an ARRAY - each company is a separate entry
       } catch (err) {
         skipReasons.aiError++;
         if (sampleErrors.length < 3) sampleErrors.push(`AI extraction failed (${postUrl}): ${err.message}`);
         return null;
       }
 
-      // SAVE CONDITION (per company): kam se kam ek owner name AUR business name,
-      // dono zaroori hain. Ek hi post/article se MULTIPLE companies qualify ho
-      // sakti hain (jaise roundup article) - har ek apni alag entry banati hai.
+      // SAVE CONDITION (per company): at least one owner name OR a business
+      // name is enough - either one qualifies, both are not required.
+      // A single post/article can qualify MULTIPLE companies (e.g. a roundup
+      // article) - each one becomes its own separate entry.
       const validCompanies = (companies || []).filter(
-        (c) => c.ownerNames && c.ownerNames.length > 0 && c.businessName
+        (c) => (c.ownerNames && c.ownerNames.length > 0) || c.businessName
       );
 
       if (validCompanies.length === 0) {
@@ -276,18 +278,18 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
   );
 
   const finalEntries = processed
-    .filter((result) => Array.isArray(result)) // null (skip) aur {error} dono hata do
-    .flat(); // ek post se aayi multiple company-entries ko flatten karo
+    .filter((result) => Array.isArray(result)) // remove both null (skipped) and {error}
+    .flat(); // flatten multiple company-entries that came from a single post
 
   log(
     `Final saved entries (companies): ${finalEntries.length} (from ${targetLinks.length} posts processed - ` +
-      `ek post se multiple companies bhi aa sakti hain)`
+      `a single post can produce multiple companies)`
   );
   log(
     `Skip breakdown -> no content: ${skipReasons.noContent}, fetch errors: ${skipReasons.fetchError}, ` +
       `AI errors: ${skipReasons.aiError}, no owner/business found: ${skipReasons.noEntities}, ` +
-      `out of date range (post-page date se confirm hua): ${skipReasons.outOfDateRange}, ` +
-      `date unknown (skip kiya, guess nahi kiya): ${skipReasons.dateUnknown}`
+      `out of date range (confirmed from post-page date): ${skipReasons.outOfDateRange}, ` +
+      `date unknown (skipped, not guessed): ${skipReasons.dateUnknown}`
   );
   sampleErrors.forEach((e) => log(`ERROR SAMPLE: ${e}`));
 

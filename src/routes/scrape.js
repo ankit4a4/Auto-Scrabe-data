@@ -12,19 +12,19 @@ const router = express.Router();
 /**
  * GET /api/debug-pagination?url=https://example.com/category&startDate=2026-06-01&steps=5
  *
- * Diagnostic tool - category page pe click-based pagination (Load More /
- * Next arrow) ko step-by-step test karta hai, detailed logs ke saath
- * (kaunsa selector match hua, click ke baad content change hua ya nahi,
- * URL before/after). Poori AI pipeline nahi chalata - bahut fast hai,
- * isse pagination-related issues ko bina AI-cost ke debug kar sakte ho.
+ * Diagnostic tool - tests click-based pagination (Load More / Next arrow)
+ * on a category page step-by-step, with detailed logs (which selector
+ * matched, whether the content changed after the click, URL before/after).
+ * Does not run the full AI pipeline - very fast, so you can debug
+ * pagination-related issues without any AI cost.
  */
 router.get("/debug-pagination", async (req, res) => {
   const { url, startDate, steps } = req.query;
   if (!url) {
-    return res.status(400).json({ error: "?url= query param required hai (category page ka URL)" });
+    return res.status(400).json({ error: "?url= query param is required (the category page URL)" });
   }
 
-  const start = startDate ? startOfDay(startDate) : startOfDay("2000-01-01"); // date-filter na chahiye ho to bahut purani date de do
+  const start = startDate ? startOfDay(startDate) : startOfDay("2000-01-01"); // if no date-filter is needed, give a very old date
   const maxSteps = steps ? parseInt(steps, 10) : 5;
 
   try {
@@ -53,19 +53,18 @@ router.get("/debug-pagination", async (req, res) => {
 /**
  * GET /api/debug-post?url=https://example.com/some-post
  *
- * Diagnostic tool - ek single post URL ke liye dikhata hai:
- *  - fetch mode (static ya dynamic/Playwright use hui)
- *  - extracted title, publishDate (jo bhi mila, ya null)
- *  - textContent ka preview (pehle 500 chars) - taaki dikhe content sahi
- *    extract ho raha hai ya nahi
- * Poori AI pipeline nahi chalata - sirf fetch + extract, taaki jaldi aur
- * bina AI-cost ke test kar sako ki kisi specific site pe date/content kyun
- * miss ho raha hai.
+ * Diagnostic tool - for a single post URL, shows:
+ *  - fetch mode (static or dynamic/Playwright was used)
+ *  - extracted title, publishDate (whatever was found, or null)
+ *  - a preview of textContent (first 500 chars) - so you can see whether
+ *    content is being extracted correctly
+ * Does not run the full AI pipeline - only fetch + extract, so you can
+ * quickly test without AI cost why date/content is missing on a specific site.
  */
 router.get("/debug-post", async (req, res) => {
   const { url } = req.query;
   if (!url) {
-    return res.status(400).json({ error: "?url= query param required hai" });
+    return res.status(400).json({ error: "?url= query param is required" });
   }
 
   try {
@@ -93,30 +92,30 @@ router.get("/debug-post", async (req, res) => {
  * POST /api/scrape
  * Body: { categoryUrl, startDate, endDate }
  *
- * startDate/endDate = "YYYY-MM-DD" format strings (jaisa HTML <input type="date">
- * deta hai). Range INCLUSIVE hai - startDate ke din se lekar endDate ke poore
- * din tak ke posts is range me aayenge.
+ * startDate/endDate = "YYYY-MM-DD" format strings (as given by an HTML
+ * <input type="date">). Range is INCLUSIVE - posts from the startDate's
+ * day through the entire endDate's day fall in this range.
  */
 router.post("/scrape", async (req, res) => {
   const { categoryUrl, startDate, endDate } = req.body;
 
   if (!categoryUrl) {
-    return res.status(400).json({ error: "categoryUrl required hai" });
+    return res.status(400).json({ error: "categoryUrl is required" });
   }
 
   if (!startDate || !endDate) {
-    return res.status(400).json({ error: "startDate aur endDate dono required hain (YYYY-MM-DD format)" });
+    return res.status(400).json({ error: "Both startDate and endDate are required (YYYY-MM-DD format)" });
   }
 
   const start = startOfDay(startDate);
   const end = endOfDay(endDate);
 
   if (!start || !end) {
-    return res.status(400).json({ error: "startDate ya endDate valid date nahi hai" });
+    return res.status(400).json({ error: "startDate or endDate is not a valid date" });
   }
 
   if (start > end) {
-    return res.status(400).json({ error: "startDate, endDate se baad ki nahi ho sakti" });
+    return res.status(400).json({ error: "startDate cannot be after endDate" });
   }
 
   try {
@@ -144,13 +143,13 @@ router.post("/scrape", async (req, res) => {
   }
 });
 
-// GET /api/results -> ab tak save hue saare entries dekho
+// GET /api/results -> see all entries saved so far
 router.get("/results", (req, res) => {
   const all = loadAll();
   res.json({ total: all.length, entries: all });
 });
 
-// GET /api/export/excel -> saare results ko Excel file me export karo
+// GET /api/export/excel -> export all results to an Excel file
 router.get("/export/excel", async (req, res) => {
   try {
     const all = loadAll();

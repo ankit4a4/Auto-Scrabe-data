@@ -41,8 +41,8 @@ async function exportToExcel(entries, outputPath) {
   ];
 
   entries.forEach((entry) => {
-    // Partnership case: 2+ owners ho sakte hain, comma-separated dikhate hain.
-    // Backward-compat: purane entries me single "ownerName" bhi ho sakta hai.
+    // Partnership case: there can be 2+ owners, shown comma-separated.
+    // Backward-compat: older entries might also have a single "ownerName".
     const ownerNamesList = Array.isArray(entry.ownerNames)
       ? entry.ownerNames
       : entry.ownerName

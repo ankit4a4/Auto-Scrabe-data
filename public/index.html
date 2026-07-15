@@ -357,18 +357,19 @@
     <button class="secondary-btn" onclick="exportExcel()">Download Excel Export</button>
 
     <div class="hint">
-      Category URL do + Start/End Date (jaise 1 July se 10 July). System
-      category pages crawl karke un dono dates ke beech ka har post dhoondega
-      (post ki apni publish-date se, category listing pe agar date dikhti ho
-      to usse pagination fast bhi ho jaati hai). Agar kisi post ki date pata
-      na chale to wo safe side skip ho jaata hai - guess nahi karta.
-      Ek baar me max posts ki safety-limit hai (bahut bada range ho to sirf
-      pehle utne hi process honge, log me bata diya jaayega).
-      Save condition: entry sirf tab save hoti hai jab Owner Name(s) AUR
-      Business Name — DONO mile (ek se kaam nahi chalega). Partnership me
-      multiple owners ho to sabke naam aayenge. City optional field hai —
-      text me mile to hi aayegi. Movie/entertainment/general-news jaisa
-      non-business content automatically skip ho jaata hai.
+      Enter a Category URL + Start/End Date (e.g. 1 July to 10 July). The
+      system will crawl category pages and find every post between those two
+      dates (from the post's own publish-date; if a date is shown on the
+      category listing, that also speeds up pagination). If a post's date
+      can't be determined, it is safely skipped - never guessed.
+      There's a safety-limit on max posts per run (for a very large range,
+      only that many will be processed first, and it will be noted in the log).
+      Save condition: an entry is saved as long as it has an Owner Name OR a
+      Business Name — either one is enough (both are not required). For
+      partnerships with multiple owners, all their names will appear. City is
+      an optional field — it will only appear if found in the text.
+      Movie/entertainment/general-news style non-business content is
+      automatically skipped.
     </div>
   </div>
 
@@ -390,11 +391,11 @@
 
     <div class="loader-stage" id="loaderStage">
       <div class="spinner"></div>
-      <div class="loader-caption">Data nikala ja raha hai, thoda wait karo...</div>
+      <div class="loader-caption">Extracting data, please wait...</div>
     </div>
 
     <div class="console" id="console">
-      <div class="console-empty">Logs yahan dikhenge jab scrape run karoge...</div>
+      <div class="console-empty">Logs will appear here when you run a scrape...</div>
     </div>
 
     <div class="results-header">
@@ -414,7 +415,7 @@
         </thead>
         <tbody id="resultsBody"></tbody>
       </table>
-      <div class="no-results" id="noResults">Koi data nahi hai abhi. Scrape run karo ya "Refresh Saved Results" dabao.</div>
+      <div class="no-results" id="noResults">No data yet. Run a scrape or click "Refresh Saved Results".</div>
     </div>
   </div>
 </div>
@@ -442,7 +443,7 @@
 
   function renderLogs(logs) {
     if (!logs || logs.length === 0) {
-      consoleEl.innerHTML = '<div class="console-empty">Koi log nahi mila.</div>';
+      consoleEl.innerHTML = '<div class="console-empty">No logs found.</div>';
       return;
     }
     consoleEl.innerHTML = logs.map(l => {
@@ -497,17 +498,17 @@
       return;
     }
     if (!startDate || !endDate) {
-      alert('Start Date aur End Date dono select karo');
+      alert('Please select both Start Date and End Date');
       return;
     }
     if (startDate > endDate) {
-      alert('Start Date, End Date ke baad ki nahi ho sakti');
+      alert('Start Date cannot be after End Date');
       return;
     }
 
     runBtn.disabled = true;
     setStatus('running', 'running...');
-    renderLogs([`Scrape shuru ho raha hai (${startDate} se ${endDate} tak), thoda time lag sakta hai...`]);
+    renderLogs([`Starting scrape (${startDate} to ${endDate}), this may take some time...`]);
     startLoaderAnimation();
 
     try {
@@ -519,8 +520,9 @@
       const data = await res.json();
 
       if (!res.ok) {
-        setStatus('error', 'error');
-        renderLogs(['Error: ' + (data.error || 'Unknown error')]);
+        // Error display is intentionally suppressed on the dashboard for now.
+        console.error('Scrape error:', data.error || 'Unknown error');
+        setStatus('idle', 'idle');
         return;
       }
 
@@ -531,8 +533,9 @@
       renderLogs(data.logs);
       renderTable(data.entries);
     } catch (err) {
-      setStatus('error', 'error');
-      renderLogs(['Request fail ho gaya: ' + err.message]);
+      // Error display is intentionally suppressed on the dashboard for now.
+      console.error('Request failed:', err.message);
+      setStatus('idle', 'idle');
     } finally {
       runBtn.disabled = false;
       stopLoaderAnimation();
@@ -546,7 +549,8 @@
       document.getElementById('statTotalDb').textContent = data.total;
       renderTable(data.entries);
     } catch (err) {
-      alert('Results load nahi ho paye: ' + err.message);
+      // Error display is intentionally suppressed on the dashboard for now.
+      console.error('Failed to load results:', err.message);
     }
   }
 

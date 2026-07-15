@@ -4,25 +4,24 @@ const config = require("../config");
 /**
  * Multi-provider AI entity extractor.
  *
- * Pehle sirf Gemini use hota tha (free tier 15 req/min), jo bottleneck tha.
- * Ab teen providers ko round-robin rotate karte hain: Gemini + Groq + OpenRouter.
- * Har provider ka apna independent rate-limit clock hai, isliye combined
- * throughput teeno ke rate limits ka SUM hota hai (jitne providers utna fast).
+ * Earlier only Gemini was used (free tier 15 req/min), which was a bottleneck.
+ * Now three providers are round-robin rotated: Gemini + Groq + OpenRouter.
+ * Each provider has its own independent rate-limit clock, so combined
+ * throughput is the SUM of all providers' rate limits (more providers = faster).
  *
- * Jitni API keys .env me daaloge utna hi fast/parallel scraping hoga.
- * Sirf ek key daali to sirf wahi use hogi (bas thoda slow rahega).
+ * The more API keys you put in .env, the faster/more parallel the scraping.
+ * If you put only one key, only that one will be used (just a bit slower).
  */
 
 // ---------------------------------------------------------------------------
 // Prompt
 //
-// IMPORTANT: ek article me EK SE ZYADA companies profile ho sakti hain
-// (jaise "5 entrepreneurs jo apna business chala rahe hain" type roundup
-// article), aur har company ke apne alag owner(s) hote hain. Isliye ab hum
-// ek FLAT ownerNames list nahi maangte - balki ek "companies" ARRAY maangte
-// hain, jisme har company ka apna businessName + apne hi ownerNames + apni
-// city hoti hai. Isse "sabhi founders ko pehli/main company se jod dena"
-// wala bug fix ho jaata hai.
+// IMPORTANT: an article can profile MORE THAN ONE company (like a "5
+// entrepreneurs running their own businesses" type roundup article), and
+// each company has its own owner(s). So instead of asking for a FLAT
+// ownerNames list, we now ask for a "companies" ARRAY, where each company
+// has its own businessName + its own ownerNames + its own city. This fixes
+// the bug of "attaching all founders to the first/main company".
 // ---------------------------------------------------------------------------
 function buildPrompt(article) {
   return `You are a strict information-extraction engine for a BUSINESS/ENTREPRENEURSHIP database.
@@ -68,12 +67,12 @@ Return strictly in this JSON shape (companies is an array - one item per distinc
 
 function safeParseJson(rawText) {
   if (!rawText) return null;
-  // Kabhi kabhi model ```json fences ke saath deta hai, strip kar do
+  // Sometimes the model returns it with ```json fences, strip those
   const cleaned = rawText.replace(/```json|```/g, "").trim();
   try {
     return JSON.parse(cleaned);
   } catch {
-    // Last resort: pehla {...} block nikaalne ki koshish
+    // Last resort: try to extract the first {...} block
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (match) {
       try {
@@ -86,7 +85,7 @@ function safeParseJson(rawText) {
   }
 }
 
-// Google/OpenAI style error message se "retry in 47.2s" jaisa hint nikaalo, agar ho
+// Extracts a hint like "retry in 47.2s" from a Google/OpenAI style error message, if present
 function extractRetryDelayMs(message) {
   const match = /retry in ([\d.]+)s/i.exec(message || "");
   if (match) return Math.ceil(parseFloat(match[1]) * 1000) + 1000; // +1s buffer
@@ -98,8 +97,8 @@ function sleep(ms) {
 }
 
 // ---------------------------------------------------------------------------
-// Per-provider rate limiter (ek MIN_INTERVAL_MS ke andar calls globally spaced
-// rehte hain - jaisa pehle sirf Gemini ke liye tha, ab har provider ka apna hai)
+// Per-provider rate limiter (calls stay globally spaced within a
+// MIN_INTERVAL_MS - previously this was only for Gemini, now each provider has its own)
 // ---------------------------------------------------------------------------
 function makeLimiter(minIntervalMs) {
   let lastCallAt = 0;
@@ -112,7 +111,7 @@ function makeLimiter(minIntervalMs) {
       if (wait > 0) await sleep(wait);
       lastCallAt = Date.now();
     });
-    queue = runNext.catch(() => {}); // ek slot fail ho to bhi queue chalti rahe
+    queue = runNext.catch(() => {}); // if one slot fails, the queue should still keep going
     return runNext;
   };
 }
@@ -163,8 +162,8 @@ async function callGemini(article) {
 }
 
 // ---------------------------------------------------------------------------
-// Provider 2 & 3: Groq / OpenRouter - dono OpenAI-compatible chat completions
-// endpoint use karte hain, isliye ek hi generic caller kaafi hai.
+// Provider 2 & 3: Groq / OpenRouter - both use the OpenAI-compatible chat
+// completions endpoint, so one generic caller is enough.
 // ---------------------------------------------------------------------------
 function makeOpenAiCompatibleCaller({ baseUrl, apiKey, model, extraHeaders }) {
   return async function call(article) {
@@ -192,8 +191,8 @@ function makeOpenAiCompatibleCaller({ baseUrl, apiKey, model, extraHeaders }) {
 }
 
 // ---------------------------------------------------------------------------
-// Active providers list - jo bhi .env me API key mili wahi providers active
-// honge. Isliye 1, 2, ya 3 - jitni keys utne providers rotate honge.
+// Active providers list - whichever API key is found in .env, that provider
+// will be active. So 1, 2, or 3 - as many keys as many providers will rotate.
 // ---------------------------------------------------------------------------
 function isConfigured(key) {
   return Boolean(key) && !key.startsWith("your_");
@@ -244,8 +243,8 @@ function buildProviders() {
 const providers = buildProviders();
 let rrIndex = 0;
 
-// Har call pe rotation ka agla provider pehle try hota hai, baaki fallback ke
-// liye order me rehte hain (agar ek provider fail/rate-limited ho jaye).
+// For each call, the next provider in rotation is tried first, the rest
+// remain in order as fallback (in case one provider fails/is rate-limited).
 function providerOrderForThisCall() {
   const n = providers.length;
   const order = [];
@@ -255,22 +254,22 @@ function providerOrderForThisCall() {
 }
 
 /**
- * Article object leta hai (contentExtractor.js se) aur ek ARRAY return karta
- * hai - har item ek alag COMPANY hai apne khud ke { ownerNames, businessName,
- * city } ke saath. Ek article me multiple unrelated companies ho sakti hain
- * (roundup articles), isliye ye ab kabhi flat single-object return nahi
- * karta - hamesha companies[] hi milega (empty array agar article qualify
- * nahi karta ya kuch nahi mila).
+ * Takes an article object (from contentExtractor.js) and returns an ARRAY -
+ * each item is a separate COMPANY with its own { ownerNames, businessName,
+ * city }. A single article can have multiple unrelated companies (roundup
+ * articles), so this never returns a flat single-object anymore - you always
+ * get companies[] (empty array if the article doesn't qualify or nothing
+ * was found).
  *
- * Rotation + fallback: har request agle provider ko round-robin se milti hai.
- * Agar wo provider fail/rate-limited ho jaye, isi request ke liye agla
- * provider try hota hai (bina user ko error dikhaye), taaki throughput
- * consistent rahe.
+ * Rotation + fallback: each request gets the next provider in round-robin
+ * order. If that provider fails/is rate-limited, the next provider is tried
+ * for this same request (without showing the user an error), so throughput
+ * stays consistent.
  */
 async function extractEntities(article) {
   if (providers.length === 0) {
     throw new Error(
-      "Koi bhi AI provider configure nahi hai. .env file me GEMINI_API_KEY, GROQ_API_KEY, ya OPENROUTER_API_KEY me se kam se kam ek daalo."
+      "No AI provider is configured. Add at least one of GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY in the .env file."
     );
   }
 
@@ -279,17 +278,17 @@ async function extractEntities(article) {
 
   for (const provider of order) {
     for (let attempt = 1; attempt <= 2; attempt++) {
-      await provider.scheduleSlot(); // apni turn ka wait karo (is provider ka rate limit respect karte hue)
+      await provider.scheduleSlot(); // wait for this provider's own turn (respecting its rate limit)
 
       try {
         const parsed = await provider.call(article);
 
-        // Naya format: { companies: [{businessName, ownerNames, city}, ...] }
+        // New format: { companies: [{businessName, ownerNames, city}, ...] }
         let rawCompanies;
         if (Array.isArray(parsed?.companies)) {
           rawCompanies = parsed.companies;
         } else if (parsed?.businessName || (Array.isArray(parsed?.ownerNames) && parsed.ownerNames.length)) {
-          // Backward-compat: agar kabhi model purana flat format de de, usse ek company maan lo
+          // Backward-compat: if the model ever returns the old flat format, treat it as one company
           rawCompanies = [parsed];
         } else {
           rawCompanies = [];
@@ -305,7 +304,7 @@ async function extractEntities(article) {
               : [],
             city: c?.city || null,
           }))
-          // Khaali/junk entries hata do (jaha na owner mila na business name)
+          // Remove empty/junk entries (where neither owner nor business name was found)
           .filter((c) => c.businessName || c.ownerNames.length > 0);
 
         return companies;
@@ -314,18 +313,18 @@ async function extractEntities(article) {
         const apiMessage = err.response?.data?.error?.message || err.message;
         lastErr = new Error(`[${provider.name}] ${apiMessage}`);
 
-        // 429 = rate limit exceeded -> isi provider pe ek retry (agar bataya gaya wait time mile)
+        // 429 = rate limit exceeded -> retry once on this same provider (if a wait time hint is given)
         if (status === 429 && attempt < 2) {
           const delay = extractRetryDelayMs(apiMessage) || 5000;
           await sleep(delay);
           continue;
         }
-        break; // is provider se kaam nahi bana -> order me agle provider pe jao
+        break; // this provider didn't work -> move to the next provider in order
       }
     }
   }
 
-  throw lastErr || new Error("Sabhi configured providers fail ho gaye");
+  throw lastErr || new Error("All configured providers failed");
 }
 
 module.exports = { extractEntities, activeProviderNames: providers.map((p) => p.name) };

@@ -22,24 +22,24 @@ async function fetchStatic(url) {
 async function fetchDynamic(url) {
   const { page, context } = await getNewPage();
   try {
-    // "domcontentloaded" fast aur reliable hai. "networkidle" ka use pehle
-    // yahan hota tha, lekin modern sites (ads/analytics/chat-widgets/websockets
-    // jo background me continuously chalte rehte hain) pe network KABHI
-    // "idle" nahi hota, isliye wo poori tarah timeout ho jaata tha (jaisa
-    // yourstory.com pe hua) - chahe page actually load ho chuka ho.
+    // "domcontentloaded" is fast and reliable. "networkidle" used to be
+    // used here before, but on modern sites (ads/analytics/chat-widgets/
+    // websockets that run continuously in the background) the network is
+    // NEVER "idle", so it would completely time out (like it did on
+    // yourstory.com) - even if the page had actually finished loading.
     await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: config.pageTimeout,
     });
 
-    // Best-effort: thoda aur wait karo taaki lazy-loaded/JS-rendered content
-    // (React/Vue components) settle ho jaaye. Agar site truly kabhi idle
-    // nahi hoti to bhi aage badh jaao - domcontentloaded already achieve
-    // ho chuka hai, wahi kaafi hai.
+    // Best-effort: wait a bit more so lazy-loaded/JS-rendered content
+    // (React/Vue components) settles. If the site truly never goes idle,
+    // proceed anyway - domcontentloaded has already been achieved,
+    // that's enough.
     try {
       await page.waitForLoadState("networkidle", { timeout: 5000 });
     } catch {
-      // Ignore - persistent background network activity hai, koi baat nahi
+      // Ignore - there's persistent background network activity, that's fine
     }
 
     await page.waitForTimeout(1000);

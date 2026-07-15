@@ -24,9 +24,9 @@ function appendQuery(base, key, value) {
 }
 
 /**
- * Category page ke HTML me pagination links dhoondo
- * (numbered links, rel="next", ya "Next" text wale anchors)
- * Isse hume real pattern mil jata hai jo site khud use kar rahi hai.
+ * Finds pagination links in a category page's HTML
+ * (numbered links, rel="next", or anchors with "Next" text)
+ * This gives us the real pattern that the site itself uses.
  */
 function detectPatternFromHtml(html, baseUrl) {
   const $ = cheerio.load(html);
@@ -52,7 +52,7 @@ function detectPatternFromHtml(html, baseUrl) {
     }
   });
 
-  // Pehla valid pagination-looking URL le lo aur uska pattern nikaalo
+  // Take the first valid pagination-looking URL and derive its pattern
   for (const link of candidates) {
     if (/page\/2\/?/.test(link)) {
       return (base, n) => link.replace(/page\/2\/?/, `page/${n}/`);
@@ -72,9 +72,9 @@ function detectPatternFromHtml(html, baseUrl) {
 }
 
 /**
- * startPage se endPage tak ke URLs banata hai.
- * Pehle actual page-1 HTML se pattern detect karta hai, agar nahi mila
- * to common fallback patterns try karta hai.
+ * Builds URLs from startPage to endPage.
+ * First tries to detect the pattern from the actual page-1 HTML, and if
+ * that doesn't work, falls back to common patterns.
  */
 function buildPageUrls(categoryUrl, startPage, endPage, page1Html) {
   const detectedPattern = page1Html
@@ -91,7 +91,7 @@ function buildPageUrls(categoryUrl, startPage, endPage, page1Html) {
     if (detectedPattern) {
       urls.push(detectedPattern(categoryUrl, n));
     } else {
-      // fallback: pehla common pattern try karo
+      // fallback: try the first common pattern
       urls.push(COMMON_PATTERNS[0](categoryUrl, n));
     }
   }

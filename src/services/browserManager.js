@@ -1,5 +1,5 @@
-// Ek hi Playwright browser instance ko reuse karte hain
-// (har request pe naya browser launch karna bahut slow + heavy hota hai)
+// Reuse a single Playwright browser instance
+// (launching a new browser on every request is very slow + heavy)
 
 const { chromium } = require("playwright");
 
