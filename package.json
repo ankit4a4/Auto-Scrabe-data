@@ -1,0 +1,25 @@
+{
+  "name": "auto-scraper",
+  "version": "1.0.0",
+  "description": "Universal category-page scraper + Gemini AI extractor",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "install-browsers": "npx playwright install chromium",
+    "postinstall": "npx playwright install chromium"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.5.0",
+    "axios": "^1.7.7",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "jsdom": "^24.1.1",
+    "playwright": "^1.61.1"
+  },
+  "devDependencies": {
+    "nock": "^14.0.16"
+  }
+}

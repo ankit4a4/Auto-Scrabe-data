@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Auto Scraper — Control Panel</title>
+<style>
+  :root {
+    --bg: #0b0e0f;
+    --panel: #12171a;
+    --panel-border: #1f2a2e;
+    --text: #d9e2e4;
+    --text-dim: #6b7c80;
+    --accent: #ff8a3d;
+    --accent-dim: #b35f27;
+    --ok: #4fd1a5;
+    --err: #ff6b6b;
+    --mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    --sans: "Inter", -apple-system, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .brand-mark {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--accent);
+    letter-spacing: 2px;
+  }
+
+  .brand h1 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.2px;
+  }
+
+  .status-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 5px 10px;
+    border-radius: 3px;
+    border: 1px solid var(--panel-border);
+    color: var(--text-dim);
+  }
+
+  .status-pill.running {
+    color: var(--accent);
+    border-color: var(--accent-dim);
+  }
+
+  .status-pill.idle::before { content: "● "; color: var(--text-dim); }
+  .status-pill.running::before { content: "● "; color: var(--accent); }
+  .status-pill.done::before { content: "● "; color: var(--ok); }
+  .status-pill.error::before { content: "● "; color: var(--err); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 0;
+    min-height: calc(100vh - 60px);
+  }
+
+  .controls {
+    padding: 24px;
+    border-right: 1px solid var(--panel-border);
+  }
+
+  .field {
+    margin-bottom: 18px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 7px;
+    font-family: var(--mono);
+  }
+
+  .field input {
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+  }
+
+  .field input:focus {
+    border-color: var(--accent-dim);
+  }
+
+  .row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .run-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #1a1005;
+    border: none;
+    padding: 12px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: var(--sans);
+    letter-spacing: 0.2px;
+    margin-top: 6px;
+  }
+
+  .run-btn:disabled {
+    background: var(--panel-border);
+    color: var(--text-dim);
+    cursor: not-allowed;
+  }
+
+  .secondary-btn {
+    width: 100%;
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--panel-border);
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-top: 10px;
+    font-family: var(--sans);
+  }
+
+  .secondary-btn:hover { color: var(--text); border-color: var(--text-dim); }
+
+  .hint {
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--panel-border);
+  }
+
+  .main {
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+  }
+
+  .summary-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  .stat {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+
+  .stat .num {
+    font-family: var(--mono);
+    font-size: 24px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .stat .label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-top: 4px;
+  }
+
+  .console {
+    background: #05070a;
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.9;
+    max-height: 220px;
+    overflow-y: auto;
+    color: #7fe0b8;
+  }
+
+  .console .line { white-space: pre-wrap; }
+  .console .line::before { content: "› "; color: var(--text-dim); }
+  .console-empty { color: var(--text-dim); font-style: italic; }
+
+  /* Simple loader */
+  .loader-stage {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 30px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+  }
+
+  .loader-stage.active { display: flex; }
+
+  .spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid var(--panel-border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .loader-caption {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+  }
+
+  .results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .results-header h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    font-weight: 600;
+    margin: 0;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-dim);
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--panel-border);
+    font-weight: 500;
+  }
+
+  tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+
+  tbody tr:hover { background: var(--panel); }
+
+  .empty-val { color: var(--text-dim); font-style: italic; }
+
+  .source-link {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .source-link:hover { color: var(--accent); }
+
+  .table-wrap {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 6px;
+    overflow: hidden;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .no-results {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <span class="brand-mark">[AS]</span>
+    <h1>Auto Scraper — Control Panel</h1>
+  </div>
+  <div class="status-pill idle" id="statusPill">idle</div>
+</div>
+
+<div class="layout">
+  <div class="controls">
+    <div class="field">
+      <label>Category URL</label>
+      <input type="text" id="categoryUrl" placeholder="https://example.com/category/business" />
+    </div>
+
+    <div class="row-2">
+      <div class="field">
+        <label>Start Date</label>
+        <input type="date" id="startDate" />
+      </div>
+      <div class="field">
+        <label>End Date</label>
+        <input type="date" id="endDate" />
+      </div>
+    </div>
+
+    <button class="run-btn" id="runBtn" onclick="runScrape()">Run Scrape</button>
+    <button class="secondary-btn" onclick="loadResults()">Refresh Saved Results</button>
+    <button class="secondary-btn" onclick="exportExcel()">Download Excel Export</button>
+
+    <div class="hint">
+      Category URL do + Start/End Date (jaise 1 July se 10 July). System
+      category pages crawl karke un dono dates ke beech ka har post dhoondega
+      (post ki apni publish-date se, category listing pe agar date dikhti ho
+      to usse pagination fast bhi ho jaati hai). Agar kisi post ki date pata
+      na chale to wo safe side skip ho jaata hai - guess nahi karta.
+      Ek baar me max posts ki safety-limit hai (bahut bada range ho to sirf
+      pehle utne hi process honge, log me bata diya jaayega).
+      Save condition: entry sirf tab save hoti hai jab Owner Name(s) AUR
+      Business Name — DONO mile (ek se kaam nahi chalega). Partnership me
+      multiple owners ho to sabke naam aayenge. City optional field hai —
+      text me mile to hi aayegi. Movie/entertainment/general-news jaisa
+      non-business content automatically skip ho jaata hai.
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="summary-row">
+      <div class="stat">
+        <div class="num" id="statPostsFound">—</div>
+        <div class="label">Posts Found</div>
+      </div>
+      <div class="stat">
+        <div class="num" id="statSaved">—</div>
+        <div class="label">Entries Saved</div>
+      </div>
+      <div class="stat">
+        <div class="num" id="statTotalDb">—</div>
+        <div class="label">Total In Database</div>
+      </div>
+    </div>
+
+    <div class="loader-stage" id="loaderStage">
+      <div class="spinner"></div>
+      <div class="loader-caption">Data nikala ja raha hai, thoda wait karo...</div>
+    </div>
+
+    <div class="console" id="console">
+      <div class="console-empty">Logs yahan dikhenge jab scrape run karoge...</div>
+    </div>
+
+    <div class="results-header">
+      <h2>Extracted Entries</h2>
+    </div>
+
+    <div class="table-wrap">
+      <table id="resultsTable" style="display:none">
+        <thead>
+          <tr>
+            <th>Owner Name(s)</th>
+            <th>Business Name</th>
+            <th>City</th>
+            <th>Published</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody id="resultsBody"></tbody>
+      </table>
+      <div class="no-results" id="noResults">Koi data nahi hai abhi. Scrape run karo ya "Refresh Saved Results" dabao.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const statusPill = document.getElementById('statusPill');
+  const runBtn = document.getElementById('runBtn');
+  const consoleEl = document.getElementById('console');
+
+  // ---------- Simple loader ----------
+  function startLoaderAnimation() {
+    document.getElementById('loaderStage').classList.add('active');
+  }
+
+  function stopLoaderAnimation() {
+    document.getElementById('loaderStage').classList.remove('active');
+  }
+  // ---------- End simple loader ----------
+
+
+  function setStatus(state, text) {
+    statusPill.className = 'status-pill ' + state;
+    statusPill.textContent = text;
+  }
+
+  function renderLogs(logs) {
+    if (!logs || logs.length === 0) {
+      consoleEl.innerHTML = '<div class="console-empty">Koi log nahi mila.</div>';
+      return;
+    }
+    consoleEl.innerHTML = logs.map(l => {
+      const isError = /error/i.test(l);
+      const style = isError ? ' style="color:#ff6b6b"' : '';
+      return `<div class="line"${style}>${escapeHtml(l)}</div>`;
+    }).join('');
+    consoleEl.scrollTop = consoleEl.scrollHeight;
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function renderTable(entries) {
+    const table = document.getElementById('resultsTable');
+    const body = document.getElementById('resultsBody');
+    const noResults = document.getElementById('noResults');
+
+    if (!entries || entries.length === 0) {
+      table.style.display = 'none';
+      noResults.style.display = 'block';
+      return;
+    }
+
+    table.style.display = 'table';
+    noResults.style.display = 'none';
+
+    body.innerHTML = entries.map(e => `
+      <tr>
+        <td>${(() => {
+          const names = Array.isArray(e.ownerNames) ? e.ownerNames : (e.ownerName ? [e.ownerName] : []);
+          return names.length ? escapeHtml(names.join(', ')) : '<span class="empty-val">—</span>';
+        })()}</td>
+        <td>${e.businessName ? escapeHtml(e.businessName) : '<span class="empty-val">—</span>'}</td>
+        <td>${e.city ? escapeHtml(e.city) : '<span class="empty-val">—</span>'}</td>
+        <td>${e.publishDate ? escapeHtml(e.publishDate) : '<span class="empty-val">—</span>'}</td>
+        <td><a class="source-link" href="${e.sourceUrl}" target="_blank">view →</a></td>
+      </tr>
+    `).join('');
+  }
+
+  async function runScrape() {
+    const categoryUrl = document.getElementById('categoryUrl').value.trim();
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+
+    if (!categoryUrl) {
+      alert('Category URL daalo pehle');
+      return;
+    }
+    if (!startDate || !endDate) {
+      alert('Start Date aur End Date dono select karo');
+      return;
+    }
+    if (startDate > endDate) {
+      alert('Start Date, End Date ke baad ki nahi ho sakti');
+      return;
+    }
+
+    runBtn.disabled = true;
+    setStatus('running', 'running...');
+    renderLogs([`Scrape shuru ho raha hai (${startDate} se ${endDate} tak), thoda time lag sakta hai...`]);
+    startLoaderAnimation();
+
+    try {
+      const res = await fetch('/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categoryUrl, startDate, endDate }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setStatus('error', 'error');
+        renderLogs(['Error: ' + (data.error || 'Unknown error')]);
+        return;
+      }
+
+      setStatus('done', 'done');
+      document.getElementById('statPostsFound').textContent = data.totalPostsFound;
+      document.getElementById('statSaved').textContent = data.totalSaved;
+      document.getElementById('statTotalDb').textContent = data.totalInDatabase;
+      renderLogs(data.logs);
+      renderTable(data.entries);
+    } catch (err) {
+      setStatus('error', 'error');
+      renderLogs(['Request fail ho gaya: ' + err.message]);
+    } finally {
+      runBtn.disabled = false;
+      stopLoaderAnimation();
+    }
+  }
+
+  async function loadResults() {
+    try {
+      const res = await fetch('/api/results');
+      const data = await res.json();
+      document.getElementById('statTotalDb').textContent = data.total;
+      renderTable(data.entries);
+    } catch (err) {
+      alert('Results load nahi ho paye: ' + err.message);
+    }
+  }
+
+  function exportExcel() {
+    window.location.href = '/api/export/excel';
+  }
+
+  // Page load pe existing results dikha do
+  loadResults();
+</script>
+
+</body>
+</html>

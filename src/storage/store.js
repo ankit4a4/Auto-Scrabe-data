@@ -1,0 +1,66 @@
+const fs = require("fs");
+const path = require("path");
+const ExcelJS = require("exceljs");
+
+const DATA_DIR = path.join(__dirname, "..", "..", "data");
+const DATA_FILE = path.join(DATA_DIR, "results.json");
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function loadAll() {
+  ensureDataDir();
+  if (!fs.existsSync(DATA_FILE)) return [];
+  const raw = fs.readFileSync(DATA_FILE, "utf-8");
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+function saveEntries(newEntries) {
+  ensureDataDir();
+  const existing = loadAll();
+  const combined = [...existing, ...newEntries];
+  fs.writeFileSync(DATA_FILE, JSON.stringify(combined, null, 2), "utf-8");
+  return combined;
+}
+
+async function exportToExcel(entries, outputPath) {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("Extracted Data");
+
+  sheet.columns = [
+    { header: "Owner Name(s)", key: "ownerNames", width: 35 },
+    { header: "Business Name", key: "businessName", width: 25 },
+    { header: "City", key: "city", width: 18 },
+    { header: "Published Date", key: "publishDate", width: 15 },
+    { header: "Source URL", key: "sourceUrl", width: 50 },
+  ];
+
+  entries.forEach((entry) => {
+    // Partnership case: 2+ owners ho sakte hain, comma-separated dikhate hain.
+    // Backward-compat: purane entries me single "ownerName" bhi ho sakta hai.
+    const ownerNamesList = Array.isArray(entry.ownerNames)
+      ? entry.ownerNames
+      : entry.ownerName
+      ? [entry.ownerName]
+      : [];
+
+    sheet.addRow({
+      ownerNames: ownerNamesList.join(", "),
+      businessName: entry.businessName,
+      city: entry.city,
+      publishDate: entry.publishDate || "",
+      sourceUrl: entry.sourceUrl,
+    });
+  });
+  sheet.getRow(1).font = { bold: true };
+
+  await workbook.xlsx.writeFile(outputPath);
+  return outputPath;
+}
+
+module.exports = { loadAll, saveEntries, exportToExcel, DATA_FILE };
