@@ -24,9 +24,9 @@ function appendQuery(base, key, value) {
 }
 
 /**
- * Finds pagination links in a category page's HTML
+ * Looks for pagination links in a category page's HTML
  * (numbered links, rel="next", or anchors with "Next" text)
- * This gives us the real pattern that the site itself uses.
+ * This gives us the real pattern the site itself is using.
  */
 function detectPatternFromHtml(html, baseUrl) {
   const $ = cheerio.load(html);
@@ -52,7 +52,7 @@ function detectPatternFromHtml(html, baseUrl) {
     }
   });
 
-  // Take the first valid pagination-looking URL and derive its pattern
+  // Take the first valid pagination-looking URL and extract its pattern
   for (const link of candidates) {
     if (/page\/2\/?/.test(link)) {
       return (base, n) => link.replace(/page\/2\/?/, `page/${n}/`);
@@ -73,8 +73,8 @@ function detectPatternFromHtml(html, baseUrl) {
 
 /**
  * Builds URLs from startPage to endPage.
- * First tries to detect the pattern from the actual page-1 HTML, and if
- * that doesn't work, falls back to common patterns.
+ * First tries to detect the pattern from the actual page-1 HTML, falls
+ * back to common patterns if that doesn't work.
  */
 function buildPageUrls(categoryUrl, startPage, endPage, page1Html) {
   const detectedPattern = page1Html

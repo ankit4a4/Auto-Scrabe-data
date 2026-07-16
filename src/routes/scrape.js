@@ -14,9 +14,9 @@ const router = express.Router();
  *
  * Diagnostic tool - tests click-based pagination (Load More / Next arrow)
  * on a category page step-by-step, with detailed logs (which selector
- * matched, whether the content changed after the click, URL before/after).
- * Does not run the full AI pipeline - very fast, so you can debug
- * pagination-related issues without any AI cost.
+ * matched, whether content changed after the click, URL before/after).
+ * Does not run the full AI pipeline - it's fast, so you can debug
+ * pagination-related issues without incurring any AI cost.
  */
 router.get("/debug-pagination", async (req, res) => {
   const { url, startDate, steps } = req.query;
@@ -24,7 +24,7 @@ router.get("/debug-pagination", async (req, res) => {
     return res.status(400).json({ error: "?url= query param is required (the category page URL)" });
   }
 
-  const start = startDate ? startOfDay(startDate) : startOfDay("2000-01-01"); // if no date-filter is needed, give a very old date
+  const start = startDate ? startOfDay(startDate) : startOfDay("2000-01-01"); // use a very old date if no date-filter is needed
   const maxSteps = steps ? parseInt(steps, 10) : 5;
 
   try {
@@ -46,20 +46,21 @@ router.get("/debug-pagination", async (req, res) => {
       })),
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "This website is fully secured and could not be scanned." });
   }
 });
 
 /**
  * GET /api/debug-post?url=https://example.com/some-post
  *
- * Diagnostic tool - for a single post URL, shows:
+ * Diagnostic tool - shows, for a single post URL:
  *  - fetch mode (static or dynamic/Playwright was used)
  *  - extracted title, publishDate (whatever was found, or null)
- *  - a preview of textContent (first 500 chars) - so you can see whether
- *    content is being extracted correctly
- * Does not run the full AI pipeline - only fetch + extract, so you can
- * quickly test without AI cost why date/content is missing on a specific site.
+ *  - a preview of textContent (first 500 chars) - to check whether content
+ *    is being extracted correctly
+ * Does not run the full AI pipeline - just fetch + extract, so you can
+ * quickly test why date/content might be missing on a specific site,
+ * without any AI cost.
  */
 router.get("/debug-post", async (req, res) => {
   const { url } = req.query;
@@ -84,7 +85,7 @@ router.get("/debug-post", async (req, res) => {
       htmlLength: html.length,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "This website is fully secured and could not be scanned." });
   }
 });
 
@@ -92,9 +93,9 @@ router.get("/debug-post", async (req, res) => {
  * POST /api/scrape
  * Body: { categoryUrl, startDate, endDate }
  *
- * startDate/endDate = "YYYY-MM-DD" format strings (as given by an HTML
- * <input type="date">). Range is INCLUSIVE - posts from the startDate's
- * day through the entire endDate's day fall in this range.
+ * startDate/endDate are "YYYY-MM-DD" format strings (as given by an HTML
+ * <input type="date">). The range is INCLUSIVE - posts from the start of
+ * startDate through the end of endDate fall within range.
  */
 router.post("/scrape", async (req, res) => {
   const { categoryUrl, startDate, endDate } = req.body;
@@ -138,12 +139,12 @@ router.post("/scrape", async (req, res) => {
       logs,
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    console.error(err); // full detail kept in server logs for debugging
+    res.status(500).json({ error: "This website is fully secured and could not be scanned." });
   }
 });
 
-// GET /api/results -> see all entries saved so far
+// GET /api/results -> view all entries saved so far
 router.get("/results", (req, res) => {
   const all = loadAll();
   res.json({ total: all.length, entries: all });
@@ -157,7 +158,7 @@ router.get("/export/excel", async (req, res) => {
     await exportToExcel(all, outputPath);
     res.download(outputPath, "extracted-data.xlsx");
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "This website is fully secured and could not be scanned." });
   }
 });
 

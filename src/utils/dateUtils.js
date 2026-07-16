@@ -1,7 +1,7 @@
-// Date strings can come in different formats from different places (ISO
-// datetime attribute, human-readable text like "July 10, 2026", etc.) -
-// JS's built-in Date parser handles most of these.
-// We never guess - if parsing fails, null is returned and that post is
+// Date strings can arrive in many different formats (ISO datetime
+// attribute, "July 10, 2026" style human-readable text, etc.) - JS's
+// built-in Date parser handles most of these.
+// We never guess - if parsing fails, null is returned and the post is
 // treated as "date unknown" and skipped (safe default).
 function parseDateSafe(value) {
   if (!value) return null;
@@ -17,8 +17,8 @@ function startOfDay(dateStr) {
   return d;
 }
 
-// The last moment of the day for the range's end (23:59:59.999) - so
-// posts throughout that entire day are also included in the range
+// End of the day for the range's end (23:59:59.999) - so that posts from
+// that entire day are included in the range
 function endOfDay(dateStr) {
   const d = parseDateSafe(dateStr);
   if (!d) return null;

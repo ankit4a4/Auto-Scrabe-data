@@ -4,8 +4,9 @@ const cheerio = require("cheerio");
 
 /**
  * Extracts clean article text + basic metadata from a post's HTML.
- * Readability removes ads/sidebar/nav/footer and gives just the main content,
- * so Gemini receives less and cleaner text (better for both cost + accuracy).
+ * Readability strips out ads/sidebar/nav/footer to give just the main
+ * content, so Gemini receives less and cleaner text (better for both cost
+ * and accuracy).
  */
 function extractArticle(html, url) {
   let title = null;
@@ -22,7 +23,7 @@ function extractArticle(html, url) {
       excerpt = article.excerpt;
     }
   } catch (err) {
-    // If Readability fails, the fallback is below
+    // Fallback below handles Readability failures
   }
 
   // Fallback if Readability couldn't extract anything
@@ -33,7 +34,7 @@ function extractArticle(html, url) {
     if (!title) title = $("title").text().trim() || null;
   }
 
-  // Extra metadata (whatever is easily available)
+  // Extra metadata (whatever's easily available)
   const $ = cheerio.load(html);
   const metaDescription =
     $('meta[name="description"]').attr("content") ||
@@ -45,11 +46,10 @@ function extractArticle(html, url) {
     $("article img").first().attr("src") ||
     null;
 
-  // Publish date - date-range filtering now depends on this field,
-  // so we try as many common sources as possible
-  // (order = by reliability, most trustworthy first). News/magazine
-  // sites (like Forbes) use different CMS/plugins (Parse.ly, Sailthru, custom),
-  // so the list is kept long.
+  // Publish date - date-range filtering now depends on this field, so we
+  // try as many common sources as possible (ordered by reliability, most
+  // trustworthy first). News/magazine sites (like Forbes) use different
+  // CMS/plugins (Parse.ly, Sailthru, custom), so the list is kept long.
   let publishDate =
     $('meta[property="article:published_time"]').attr("content") ||
     $('meta[property="og:article:published_time"]').attr("content") ||
@@ -64,10 +64,9 @@ function extractArticle(html, url) {
     $("time[datetime]").first().attr("datetime") ||
     null;
 
-  // Fallback: it's common for JSON-LD structured data to have the date, but
-  // many sites keep it nested inside an "@graph" array (checking only the
-  // top-level isn't enough) - so we search recursively through the whole
-  // JSON tree.
+  // Fallback: JSON-LD structured data commonly has a date, but many sites
+  // nest it inside a "@graph" array (checking only the top level isn't
+  // enough) - so we recursively search the whole JSON tree.
   if (!publishDate) {
     function findDateInJsonLd(node) {
       if (!node || typeof node !== "object") return null;
@@ -96,10 +95,10 @@ function extractArticle(html, url) {
     });
   }
 
-  // Last fallback: <time> tag's visible text (if no datetime attribute),
-  // or common class-based date elements (many custom-CMS sites, like Forbes-
-  // style magazine sites, only show the date as visible text, with no
-  // structured meta/JSON-LD)
+  // Last fallback: visible text of a <time> tag (when there's no datetime
+  // attribute), or common class-based date elements (many custom-CMS
+  // sites, like Forbes-style magazine sites, only show the date as visible
+  // text, with no structured meta/JSON-LD)
   if (!publishDate) {
     const timeText = $("time").first().text().trim();
     if (timeText) {
@@ -117,10 +116,10 @@ function extractArticle(html, url) {
   }
 
   // A very common pattern on Indian news/magazine sites (like Forbes India):
-  // plain text says "First Published: Jun 26, 2026, 15:51" or
-  // "Last Updated: Jun 26, 2026, 17:19 IST", without any
-  // structured tag/class. We prioritize "First Published"
-  // (the real publish-date), with "Last Updated" as a fallback.
+  // plain text saying "First Published: Jun 26, 2026, 15:51" or
+  // "Last Updated: Jun 26, 2026, 17:19 IST", with no structured tag/class
+  // at all. "First Published" is prioritized (the actual publish date),
+  // "Last Updated" is used as a fallback.
   if (!publishDate) {
     const bodyText = $("body").text();
     const datePattern =
@@ -136,8 +135,8 @@ function extractArticle(html, url) {
     const match = publishedMatch || updatedMatch;
     if (match) {
       const rawDate = match[1].trim();
-      // If "IST" is explicitly written in the text, use that offset (not
-      // guessing - the source itself has stated this is Indian Standard Time)
+      // If "IST" is explicitly written in the text, use that offset
+      // (not a guess - the source itself said it's Indian Standard Time)
       publishDate = match[2] ? `${rawDate} GMT+0530` : rawDate;
     }
   }
@@ -150,7 +149,7 @@ function extractArticle(html, url) {
   return {
     url,
     title,
-    textContent: textContent.slice(0, 12000), // Don't send too much text to Gemini
+    textContent: textContent.slice(0, 12000), // don't send too much text to Gemini
     excerpt,
     metaDescription,
     featuredImage,

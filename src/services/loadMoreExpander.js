@@ -3,7 +3,7 @@ const { extractPostLinksWithDates } = require("./linkExtractor");
 const { parseDateSafe } = require("../utils/dateUtils");
 const config = require("../config");
 
-// "Load More" pattern (new content is APPENDED after the EXISTING content)
+// "Load More" pattern (new content is APPENDED after existing content)
 const LOAD_MORE_SELECTORS = [
   "button:has-text('Load More')",
   "button:has-text('Load more')",
@@ -21,10 +21,10 @@ const LOAD_MORE_SELECTORS = [
   "[id*='loadmore']",
 ];
 
-// "Next page" pattern (numbered pagination like forbesindia.com has -
-// content is REPLACED, URL doesn't change). We do NOT check what
-// mechanism (React state/AJAX/whatever) the site is using -
-// we just find a human-like "Next" button/arrow and click it.
+// "Next page" pattern (numbered pagination like forbesindia.com - content
+// is REPLACED, URL doesn't change). We do NOT check which mechanism
+// (React state/AJAX/whatever) the site uses - we just look for a
+// human-like "Next" button/arrow and click it.
 const NEXT_PAGE_SELECTORS = [
   "[aria-label='Next']",
   "[aria-label*='Next' i]",
@@ -42,7 +42,7 @@ const NEXT_PAGE_SELECTORS = [
   "a:has-text('Next')",
 ];
 
-// Try each round in the sequence of both arrays - click whichever is found first
+// Try both arrays in sequence each round - click whichever is found first
 const ALL_ADVANCE_SELECTORS = [...LOAD_MORE_SELECTORS, ...NEXT_PAGE_SELECTORS];
 
 function linksSignature(links) {
@@ -50,20 +50,20 @@ function linksSignature(links) {
 }
 
 /**
- * When pagination on a category page is JS-driven (URL doesn't change -
- * whether it's a "Load More" button (append-style) or a numbered "Next"
- * arrow (replace-style, like forbesindia.com has) - this function DOESN'T
- * CARE what the underlying mechanism is. It just does this:
- *   1. Capture the "signature" (list of post-links) of the current content
- *   2. Find any advance-control (Load More OR Next arrow) and click it
- *   3. Check whether the content's signature changed or not
- *   4. If it changed -> collect new links, try again
- *   5. If not, or if no control was found at all -> stop
+ * When category-page pagination is JS-driven (URL doesn't change) - whether
+ * via a "Load More" button (append-style) or a numbered "Next" arrow
+ * (replace-style, as with forbesindia.com) - this function doesn't care
+ * about the underlying mechanism. It simply:
+ *   1. Captures a "signature" of the current content (list of post-links)
+ *   2. Finds any advance-control (Load More OR Next arrow) and clicks it
+ *   3. Checks whether the content's signature changed
+ *   4. If it changed -> collect the new links, try again
+ *   5. If not, or if no control was found -> stop
  *
- * Date-aware early stop: if the date-hint of posts found at some step turns
- * out to be older than startDate, we stop clicking further (assuming a
- * chronological listing) - since a category can have up to 100 pages,
- * we shouldn't need to click through all of them.
+ * Date-aware early stop: if a step's posts have a date-hint older than
+ * startDate, further clicking stops (assuming chronological listing) -
+ * since a category can have up to 100 pages, we don't want to click
+ * through all of them.
  */
 async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProgress }) {
   const log = (msg) => onProgress && onProgress(msg);
@@ -81,7 +81,7 @@ async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProg
     try {
       await page.waitForLoadState("networkidle", { timeout: 5000 });
     } catch {
-      /* persistent background activity - ignore, continue */
+      /* persistent background activity - ignore, proceed anyway */
     }
 
     for (let step = 0; step <= maxSteps; step++) {
@@ -134,9 +134,9 @@ async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProg
           clicked = true;
           stepsDone++;
 
-          // Wait for the content to change - until the signature (post-links
-          // list) changes, or max 5 seconds (whichever comes first). This
-          // works for both append-style and replace-style pagination.
+          // Wait for content to change - the post-links signature changing,
+          // or up to 5 seconds (whichever comes first). This works for both
+          // append-style and replace-style pagination.
           contentActuallyChanged = await page
             .waitForFunction(
               (prevSignature) => {
@@ -155,7 +155,7 @@ async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProg
           await page.waitForTimeout(700); // a bit of extra settle time
           break;
         } catch {
-          /* click didn't work with this selector, try the next one */
+          /* click via this selector didn't work, try the next one */
         }
       }
 
@@ -166,15 +166,15 @@ async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProg
       );
 
       if (!clicked) {
-        log(`No "Load More"/"Next" control found after step ${step + 1} - pagination looks like it has ended`);
+        log(`No "Load More"/"Next" control found after step ${step + 1} - pagination appears to have ended`);
         break;
       }
 
       if (!contentActuallyChanged) {
-        // The click happened (element was found, click succeeded), but the
-        // content stayed the same - meaning this same element would keep
-        // getting clicked repeatedly with no effect (like a disabled button,
-        // or a wrong element match). Continuing further won't help, so we stop.
+        // The click happened (element found, click executed), but the
+        // content stayed the same - meaning we're likely clicking the same
+        // element repeatedly with no effect (e.g. a disabled button, or a
+        // wrong element match). Continuing further won't help, so we stop.
         log(`Click happened but content didn't change - pagination is limited to this point, stopping`);
         break;
       }

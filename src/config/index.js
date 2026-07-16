@@ -26,15 +26,15 @@ module.exports = {
   maxPostLimit: parseInt(process.env.MAX_POST_LIMIT || "20", 10),
   maxPagesToCrawl: parseInt(process.env.MAX_PAGES_TO_CRAWL || "15", 10),
 
-  // Max click/step attempts for JS-driven pagination (Load More button OR
-  // numbered Next-arrow, both) (safety cap - for sites with a huge number
-  // of pages, like 100-page categories, we don't keep clicking without a limit)
+  // Max click/step attempts for JS-driven pagination (either a Load More
+  // button or a numbered Next-arrow) - a safety cap so we don't keep
+  // clicking endlessly on sites with very many pages (e.g. 100-page categories)
   maxLoadMoreClicks: parseInt(process.env.MAX_PAGINATION_STEPS || process.env.MAX_LOAD_MORE_CLICKS || "8", 10),
 
   // --- Date-range based scraping ---
-  // Safety cap: if too many posts are found in the date range (a large range
-  // or a very active site), only this many will be processed - the rest get
-  // truncated with a warning in the log. This prevents accidentally
+  // Safety cap: if a date range yields too many posts (a large range or a
+  // very active site), only this many will be processed - the rest are
+  // truncated and a warning appears in the log. This prevents accidentally
   // processing 500+ posts.
   maxDateRangePosts: parseInt(process.env.MAX_DATE_RANGE_POSTS || "30", 10),
 };

@@ -357,19 +357,20 @@
     <button class="secondary-btn" onclick="exportExcel()">Download Excel Export</button>
 
     <div class="hint">
-      Enter a Category URL + Start/End Date (e.g. 1 July to 10 July). The
+      Enter the Category URL + Start/End Date (e.g. 1 July to 10 July). The
       system will crawl category pages and find every post between those two
-      dates (from the post's own publish-date; if a date is shown on the
-      category listing, that also speeds up pagination). If a post's date
-      can't be determined, it is safely skipped - never guessed.
-      There's a safety-limit on max posts per run (for a very large range,
-      only that many will be processed first, and it will be noted in the log).
-      Save condition: an entry is saved as long as it has an Owner Name OR a
-      Business Name — either one is enough (both are not required). For
-      partnerships with multiple owners, all their names will appear. City is
-      an optional field — it will only appear if found in the text.
-      Movie/entertainment/general-news style non-business content is
-      automatically skipped.
+      dates (based on each post's own publish date - if the category listing
+      also shows dates, that speeds up pagination). If a post's date can't be
+      determined, it is safely skipped rather than guessed.
+      There's a safety limit on how many posts are processed in one run (for
+      a very large range, only the first batch will be processed, and this
+      will be noted in the log).
+      Save condition: an entry is only saved when BOTH Owner Name(s) AND
+      Business Name are found (having just one is not enough). For
+      partnerships with multiple owners, all names will be included. City is
+      an optional field - it only appears if mentioned in the text.
+      Non-business content (movies/entertainment/general news) is
+      automatically filtered out.
     </div>
   </div>
 
@@ -395,7 +396,7 @@
     </div>
 
     <div class="console" id="console">
-      <div class="console-empty">Logs will appear here when you run a scrape...</div>
+      <div class="console-empty">Logs will appear here once you run a scrape...</div>
     </div>
 
     <div class="results-header">
@@ -443,14 +444,10 @@
 
   function renderLogs(logs) {
     if (!logs || logs.length === 0) {
-      consoleEl.innerHTML = '<div class="console-empty">No logs found.</div>';
+      consoleEl.innerHTML = '<div class="console-empty">No logs yet.</div>';
       return;
     }
-    consoleEl.innerHTML = logs.map(l => {
-      const isError = /error/i.test(l);
-      const style = isError ? ' style="color:#ff6b6b"' : '';
-      return `<div class="line"${style}>${escapeHtml(l)}</div>`;
-    }).join('');
+    consoleEl.innerHTML = logs.map(l => `<div class="line">${escapeHtml(l)}</div>`).join('');
     consoleEl.scrollTop = consoleEl.scrollHeight;
   }
 
@@ -494,7 +491,7 @@
     const endDate = document.getElementById('endDate').value;
 
     if (!categoryUrl) {
-      alert('Category URL daalo pehle');
+      alert('Please enter a category URL first');
       return;
     }
     if (!startDate || !endDate) {
@@ -508,7 +505,7 @@
 
     runBtn.disabled = true;
     setStatus('running', 'running...');
-    renderLogs([`Starting scrape (${startDate} to ${endDate}), this may take some time...`]);
+    renderLogs([`Starting scrape (${startDate} to ${endDate}), this may take a moment...`]);
     startLoaderAnimation();
 
     try {
@@ -520,9 +517,8 @@
       const data = await res.json();
 
       if (!res.ok) {
-        // Error display is intentionally suppressed on the dashboard for now.
-        console.error('Scrape error:', data.error || 'Unknown error');
-        setStatus('idle', 'idle');
+        setStatus('done', 'done');
+        renderLogs(['This website is fully secured and could not be scanned. Please try a different website or date range.']);
         return;
       }
 
@@ -530,12 +526,16 @@
       document.getElementById('statPostsFound').textContent = data.totalPostsFound;
       document.getElementById('statSaved').textContent = data.totalSaved;
       document.getElementById('statTotalDb').textContent = data.totalInDatabase;
-      renderLogs(data.logs);
+
+      if (!data.totalPostsFound || data.totalPostsFound === 0) {
+        renderLogs(['0 posts found for the selected date range.']);
+      } else {
+        renderLogs(data.logs);
+      }
       renderTable(data.entries);
     } catch (err) {
-      // Error display is intentionally suppressed on the dashboard for now.
-      console.error('Request failed:', err.message);
-      setStatus('idle', 'idle');
+      setStatus('done', 'done');
+      renderLogs(['This website is fully secured and could not be scanned. Please try a different website or date range.']);
     } finally {
       runBtn.disabled = false;
       stopLoaderAnimation();
@@ -549,8 +549,7 @@
       document.getElementById('statTotalDb').textContent = data.total;
       renderTable(data.entries);
     } catch (err) {
-      // Error display is intentionally suppressed on the dashboard for now.
-      console.error('Failed to load results:', err.message);
+      alert('Could not load results: ' + err.message);
     }
   }
 
@@ -558,7 +557,7 @@
     window.location.href = '/api/export/excel';
   }
 
-  // Page load pe existing results dikha do
+  // Load existing results on page load
   loadResults();
 </script>
 

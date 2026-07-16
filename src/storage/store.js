@@ -42,7 +42,7 @@ async function exportToExcel(entries, outputPath) {
 
   entries.forEach((entry) => {
     // Partnership case: there can be 2+ owners, shown comma-separated.
-    // Backward-compat: older entries might also have a single "ownerName".
+    // Backward-compat: older entries might have a single "ownerName" field.
     const ownerNamesList = Array.isArray(entry.ownerNames)
       ? entry.ownerNames
       : entry.ownerName

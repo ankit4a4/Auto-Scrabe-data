@@ -1,7 +1,7 @@
 const cheerio = require("cheerio");
 const { fetchStatic, fetchDynamic } = require("./fetchers");
 
-// Domain-wise cache so detection doesn't need to run repeatedly
+// Domain-wise cache so detection doesn't need to happen repeatedly
 // (in production this could be persisted to MongoDB/a file)
 const domainModeCache = new Map();
 
@@ -13,7 +13,7 @@ function getDomain(url) {
   }
 }
 
-// Checks whether static HTML has "real" content or not, using a rough heuristic
+// Rough heuristic to check whether "real" content is present in the static HTML
 function looksLikeRealContent(html) {
   const $ = cheerio.load(html);
   $("script, style, noscript").remove();
@@ -37,9 +37,9 @@ function looksLikeRealContent(html) {
 }
 
 /**
- * Given a URL, decide whether it's "static" (Cheerio will do the job)
- * or "dynamic" (Playwright is needed), and return that same HTML
- * (to avoid double fetching).
+ * Given a URL, decides whether "static" (Cheerio will do) or "dynamic"
+ * (Playwright needed) fetching is required, and returns that HTML
+ * (to avoid double-fetching).
  */
 async function fetchWithAutoDetect(url) {
   const domain = getDomain(url);
@@ -63,7 +63,7 @@ async function fetchWithAutoDetect(url) {
     return { html: staticHtml, mode: "static" };
   }
 
-  // Static didn't work -> Playwright fallback
+  // Static didn't work out -> fall back to Playwright
   const dynamicHtml = await fetchDynamic(url);
   domainModeCache.set(domain, "dynamic");
   return { html: dynamicHtml, mode: "dynamic" };
