@@ -1,11 +1,12 @@
 const express = require("express");
 const path = require("path");
 const { runScrapePipeline } = require("../services/pipeline");
-const { saveEntries, loadAll, exportToExcel } = require("../storage/store");
+const { saveEntries, loadAll, clearAll, exportToExcel } = require("../storage/store");
 const { startOfDay, endOfDay, parseDateSafe } = require("../utils/dateUtils");
 const { fetchWithAutoDetect } = require("../services/renderModeDetector");
 const { extractArticle } = require("../services/contentExtractor");
 const { clickThroughPagination } = require("../services/loadMoreExpander");
+
 
 const router = express.Router();
 
@@ -156,6 +157,7 @@ router.get("/export/excel", async (req, res) => {
     const all = loadAll();
     const outputPath = path.join(__dirname, "..", "..", "data", "export.xlsx");
     await exportToExcel(all, outputPath);
+    clearAll(); // data is now downloaded - clear it so the next scrape starts fresh
     res.download(outputPath, "extracted-data.xlsx");
   } catch (err) {
     res.status(500).json({ error: "This website is fully secured and could not be scanned." });

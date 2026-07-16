@@ -22,10 +22,16 @@ function loadAll() {
 
 function saveEntries(newEntries) {
   ensureDataDir();
-  const existing = loadAll();
-  const combined = [...existing, ...newEntries];
-  fs.writeFileSync(DATA_FILE, JSON.stringify(combined, null, 2), "utf-8");
-  return combined;
+  // Overwrite instead of appending - each new scrape starts with a clean
+  // slate, so results from a previous website/run never mix with the
+  // current one.
+  fs.writeFileSync(DATA_FILE, JSON.stringify(newEntries, null, 2), "utf-8");
+  return newEntries;
+}
+
+function clearAll() {
+  ensureDataDir();
+  fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2), "utf-8");
 }
 
 async function exportToExcel(entries, outputPath) {
@@ -63,4 +69,4 @@ async function exportToExcel(entries, outputPath) {
   return outputPath;
 }
 
-module.exports = { loadAll, saveEntries, exportToExcel, DATA_FILE };
+module.exports = { loadAll, saveEntries, clearAll, exportToExcel, DATA_FILE };
