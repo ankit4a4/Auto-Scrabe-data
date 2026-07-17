@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Auto Scraper — Login</title>
+<style>
+  :root {
+    --bg: #0b0e0f;
+    --panel: #12171a;
+    --panel-border: #1f2a2e;
+    --text: #d9e2e4;
+    --text-dim: #6b7c80;
+    --accent: #ff8a3d;
+    --accent-dim: #b35f27;
+    --err: #ff6b6b;
+    --mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+    --sans: "Inter", -apple-system, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .login-card {
+    width: 100%;
+    max-width: 360px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 32px;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  .brand-mark {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--accent);
+    letter-spacing: 2px;
+  }
+
+  .brand h1 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .field {
+    margin-bottom: 16px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim);
+    margin-bottom: 7px;
+    font-family: var(--mono);
+  }
+
+  .field input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 13px;
+    outline: none;
+  }
+
+  .field input:focus {
+    border-color: var(--accent-dim);
+  }
+
+  .error-box {
+    display: none;
+    background: rgba(255, 107, 107, 0.1);
+    border: 1px solid rgba(255, 107, 107, 0.35);
+    color: var(--err);
+    font-size: 12.5px;
+    padding: 10px 12px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+  }
+
+  .error-box.visible {
+    display: block;
+  }
+
+  .login-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #1a1005;
+    border: none;
+    padding: 12px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: var(--sans);
+  }
+
+  .login-btn:disabled {
+    background: var(--panel-border);
+    color: var(--text-dim);
+    cursor: not-allowed;
+  }
+</style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="brand">
+    <span class="brand-mark">[AS]</span>
+    <h1>Auto Scraper — Login</h1>
+  </div>
+
+  <div class="error-box" id="errorBox"></div>
+
+  <form id="loginForm">
+    <div class="field">
+      <label>Username</label>
+      <input type="text" id="username" autocomplete="username" required />
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="password" autocomplete="current-password" required />
+    </div>
+    <button type="submit" class="login-btn" id="loginBtn">Log In</button>
+  </form>
+</div>
+
+<script>
+  const form = document.getElementById('loginForm');
+  const errorBox = document.getElementById('errorBox');
+  const loginBtn = document.getElementById('loginBtn');
+
+  function showError(message) {
+    errorBox.textContent = message;
+    errorBox.classList.add('visible');
+  }
+
+  function hideError() {
+    errorBox.classList.remove('visible');
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    hideError();
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Logging in...';
+
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.error || 'Login failed. Please try again.');
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Log In';
+        return;
+      }
+
+      window.location.href = '/';
+    } catch (err) {
+      showError('Could not reach the server. Please try again.');
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Log In';
+    }
+  });
+</script>
+
+</body>
+</html>

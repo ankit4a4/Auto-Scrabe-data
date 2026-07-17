@@ -1,5 +1,8 @@
 const { fetchWithAutoDetect } = require("./renderModeDetector");
-const { detectPatternFromHtml, COMMON_PATTERNS } = require("./paginationBuilder");
+const {
+  detectPatternFromHtml,
+  COMMON_PATTERNS,
+} = require("./paginationBuilder");
 const { extractPostLinksWithDates } = require("./linkExtractor");
 const { extractArticle } = require("./contentExtractor");
 const { extractEntities } = require("./entityExtractor");
@@ -41,7 +44,13 @@ async function runWithLimit(items, limit, worker) {
  * maxPagesToCrawl, with the final decision based on the accurate date
  * fetched from each post's own page.
  */
-async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1Html, log }) {
+async function collectPostsInDateRange({
+  categoryUrl,
+  startDate,
+  endDate,
+  page1Html,
+  log,
+}) {
   const seen = new Set();
   const candidates = []; // { url, dateHint }
   const detectedPattern = detectPatternFromHtml(page1Html, categoryUrl);
@@ -92,7 +101,7 @@ async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1H
 
     log(
       `Page ${pageNum}: found ${linksWithDates.length} post links, ${newOnThisPage} new ` +
-        `(candidates so far: ${candidates.length}${hadAnyDateHint ? "" : ", no date shown in listing"})`
+        `(candidates so far: ${candidates.length}${hadAnyDateHint ? "" : ", no date shown in listing"})`,
     );
 
     if (pageNum > 1 && newOnThisPage === 0) {
@@ -106,14 +115,17 @@ async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1H
       // This fallback is only tried the first time (pageNum===2) - if that
       // also yields nothing new, we assume pagination has truly ended.
       if (pageNum === 2) {
-        log(`No new posts found via Page 2 URL - checking for JS-driven pagination (Load More/Next button)...`);
+        log(
+          `No new posts found via Page 2 URL - checking for JS-driven pagination (Load More/Next button)...`,
+        );
         try {
-          const { candidates: clickCandidates, stepsDone } = await clickThroughPagination({
-            categoryUrl,
-            startDate,
-            maxSteps: config.maxLoadMoreClicks,
-            onProgress: log,
-          });
+          const { candidates: clickCandidates, stepsDone } =
+            await clickThroughPagination({
+              categoryUrl,
+              startDate,
+              maxSteps: config.maxLoadMoreClicks,
+              onProgress: log,
+            });
 
           let newFromExpansion = 0;
           for (const { url, dateHint } of clickCandidates) {
@@ -128,21 +140,29 @@ async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1H
           }
 
           if (stepsDone > 0) {
-            log(`Click-based pagination found ${newFromExpansion} new posts (candidates so far: ${candidates.length})`);
+            log(
+              `Click-based pagination found ${newFromExpansion} new posts (candidates so far: ${candidates.length})`,
+            );
           } else {
-            log(`No click-based pagination control found - pagination appears to have ended`);
+            log(
+              `No click-based pagination control found - pagination appears to have ended`,
+            );
           }
         } catch (err) {
           log(`Error while trying click-based pagination: ${err.message}`);
         }
       } else {
-        log(`No new posts found on page ${pageNum}, pagination appears to have ended`);
+        log(
+          `No new posts found on page ${pageNum}, pagination appears to have ended`,
+        );
       }
       break;
     }
 
     if (stopAfterThisPage) {
-      log(`Found posts older than the range on page ${pageNum}, stopping further crawling`);
+      log(
+        `Found posts older than the range on page ${pageNum}, stopping further crawling`,
+      );
       break;
     }
 
@@ -174,14 +194,27 @@ async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1H
  * Multi-company case: a single post/article can yield multiple companies
  * (e.g. roundup articles) as separate entries - they are never mixed together.
  */
-async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }) {
+async function runScrapePipeline({
+  categoryUrl,
+  startDate,
+  endDate,
+  onProgress,
+}) {
   const log = (msg) => onProgress && onProgress(msg);
 
   log(`Loading category page: ${categoryUrl}`);
   const { html: page1Html } = await fetchWithAutoDetect(categoryUrl);
 
-  log(`Target date range: ${formatDateForLog(startDate)} to ${formatDateForLog(endDate)}, starting to crawl pages...`);
-  const candidates = await collectPostsInDateRange({ categoryUrl, startDate, endDate, page1Html, log });
+  log(
+    `Target date range: ${formatDateForLog(startDate)} to ${formatDateForLog(endDate)}, starting to crawl pages...`,
+  );
+  const candidates = await collectPostsInDateRange({
+    categoryUrl,
+    startDate,
+    endDate,
+    page1Html,
+    log,
+  });
 
   if (candidates.length === 0) {
     log(`No posts found around this date range.`);
@@ -192,7 +225,7 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
   if (candidates.length > config.maxDateRangePosts) {
     log(
       `Found ${candidates.length} candidate posts in range, which exceeds the max limit (${config.maxDateRangePosts}). ` +
-        `Only the first ${config.maxDateRangePosts} will be processed - try a smaller range or increase MAX_DATE_RANGE_POSTS.`
+        `Only the first ${config.maxDateRangePosts} will be processed - try a smaller range or increase MAX_DATE_RANGE_POSTS.`,
     );
     targetLinks = candidates.slice(0, config.maxDateRangePosts);
   }
@@ -220,7 +253,8 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
         html = result.html;
       } catch (err) {
         skipReasons.fetchError++;
-        if (sampleErrors.length < 3) sampleErrors.push(`Fetch failed (${postUrl}): ${err.message}`);
+        if (sampleErrors.length < 3)
+          sampleErrors.push(`Fetch failed (${postUrl}): ${err.message}`);
         return null;
       }
 
@@ -249,7 +283,10 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
         companies = await extractEntities(article); // returns an ARRAY - each company is a separate entry
       } catch (err) {
         skipReasons.aiError++;
-        if (sampleErrors.length < 3) sampleErrors.push(`AI extraction failed (${postUrl}): ${err.message}`);
+        if (sampleErrors.length < 3)
+          sampleErrors.push(
+            `AI extraction failed (${postUrl}): ${err.message}`,
+          );
         return null;
       }
 
@@ -257,7 +294,7 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
       // name, both are required. A single post/article can qualify MULTIPLE
       // companies (e.g. a roundup article) - each becomes its own separate entry.
       const validCompanies = (companies || []).filter(
-        (c) => c.ownerNames && c.ownerNames.length > 0 && c.businessName
+        (c) => (c.ownerNames && c.ownerNames.length > 0) || c.businessName,
       );
 
       if (validCompanies.length === 0) {
@@ -272,7 +309,7 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
         publishDate: formatDateForLog(actualDate),
         sourceUrl: postUrl,
       }));
-    }
+    },
   );
 
   const finalEntries = processed
@@ -281,13 +318,13 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
 
   log(
     `Final saved entries (companies): ${finalEntries.length} (from ${targetLinks.length} posts processed - ` +
-      `a single post can yield multiple companies)`
+      `a single post can yield multiple companies)`,
   );
   log(
     `Skip breakdown -> no content: ${skipReasons.noContent}, fetch errors: ${skipReasons.fetchError}, ` +
       `AI errors: ${skipReasons.aiError}, no owner/business found: ${skipReasons.noEntities}, ` +
       `out of date range (confirmed via post's own page): ${skipReasons.outOfDateRange}, ` +
-      `date unknown (skipped, never guessed): ${skipReasons.dateUnknown}`
+      `date unknown (skipped, never guessed): ${skipReasons.dateUnknown}`,
   );
   sampleErrors.forEach((e) => log(`ERROR SAMPLE: ${e}`));
 

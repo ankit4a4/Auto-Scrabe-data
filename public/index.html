@@ -353,7 +353,7 @@
     </div>
 
     <button class="run-btn" id="runBtn" onclick="runScrape()">Run Scrape</button>
-    <button class="secondary-btn" onclick="loadResults()">Refresh Saved Results</button>
+    <button class="secondary-btn" onclick="clearAndLoadResults()">Refresh Saved Results</button>
     <button class="secondary-btn" onclick="exportExcel()">Download Excel Export</button>
 
     <div class="hint">
@@ -491,15 +491,15 @@
     const endDate = document.getElementById('endDate').value;
 
     if (!categoryUrl) {
-      alert('Please enter a category URL first');
+      renderLogs(['Please enter a category URL first.']);
       return;
     }
     if (!startDate || !endDate) {
-      alert('Please select both Start Date and End Date');
+      renderLogs(['Please select both Start Date and End Date.']);
       return;
     }
     if (startDate > endDate) {
-      alert('Start Date cannot be after End Date');
+      renderLogs(['Start Date cannot be after End Date.']);
       return;
     }
 
@@ -549,16 +549,29 @@
       document.getElementById('statTotalDb').textContent = data.total;
       renderTable(data.entries);
     } catch (err) {
-      alert('Could not load results: ' + err.message);
+      renderLogs(['Could not load saved results.']);
     }
+  }
+
+  // Clears the saved JSON data, then refreshes the view. Data is only meant
+  // to persist for the current page session - it resets whenever the page
+  // is reloaded, or when this is triggered manually via the button below.
+  async function clearAndLoadResults() {
+    try {
+      await fetch('/api/clear-results', { method: 'POST' });
+    } catch (err) {
+      /* if this fails, loadResults() below will just show whatever's there */
+    }
+    await loadResults();
   }
 
   function exportExcel() {
     window.location.href = '/api/export/excel';
   }
 
-  // Load existing results on page load
-  loadResults();
+  // Data resets on every page load/reload - it only persists within the
+  // current session until reloaded or manually cleared via the button
+  clearAndLoadResults();
 </script>
 
 </body>

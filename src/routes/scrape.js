@@ -7,7 +7,6 @@ const { fetchWithAutoDetect } = require("../services/renderModeDetector");
 const { extractArticle } = require("../services/contentExtractor");
 const { clickThroughPagination } = require("../services/loadMoreExpander");
 
-
 const router = express.Router();
 
 /**
@@ -151,7 +150,16 @@ router.get("/results", (req, res) => {
   res.json({ total: all.length, entries: all });
 });
 
-// GET /api/export/excel -> export all results to an Excel file
+// POST /api/clear-results -> empty out the saved JSON data (called on page
+// load / reload, and when the "Refresh Saved Results" button is clicked -
+// data is only meant to persist for the current page session, not across
+// reloads or button clicks)
+router.post("/clear-results", (req, res) => {
+  clearAll();
+  res.json({ success: true });
+});
+
+// GET /api/export/excel -> export all results to an Excel file, then clear the saved JSON data
 router.get("/export/excel", async (req, res) => {
   try {
     const all = loadAll();

@@ -20,11 +20,19 @@ Gemini, Groq, and/or OpenRouter (whichever API keys you configure).
 npm install
 npx playwright install chromium   # one-time Playwright browser install
 cp .env.example .env
-# open .env and fill in at least one AI provider's API key
+# open .env and fill in: ADMIN_USERNAME, ADMIN_PASSWORD, and at least one AI provider's API key
 npm start
 ```
 
 Server runs at `http://localhost:4000` (or whichever `PORT` you set).
+
+## Login
+
+The whole app (admin panel + API) is protected by a login prompt (HTTP
+Basic Auth - your browser will show its own native username/password
+popup, no custom login page needed). Set `ADMIN_USERNAME` and
+`ADMIN_PASSWORD` in `.env` - nothing is accessible until the correct
+credentials are entered.
 
 ## AI Providers
 

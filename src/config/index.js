@@ -3,6 +3,10 @@ require("dotenv").config();
 module.exports = {
   port: process.env.PORT || 4000,
 
+  // --- Admin panel login (HTTP Basic Auth - required to access anything) ---
+  adminUsername: process.env.ADMIN_USERNAME || "",
+  adminPassword: process.env.ADMIN_PASSWORD || "",
+
   // --- Gemini (free tier: 15 req/min, 1500 req/day for gemini-3.5-flash) ---
   geminiApiKey: process.env.GEMINI_API_KEY || "",
   geminiModel: process.env.GEMINI_MODEL || "gemini-3.5-flash",
