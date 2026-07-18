@@ -42,6 +42,8 @@ async function exportToExcel(entries, outputPath) {
     { header: "Owner Name(s)", key: "ownerNames", width: 35 },
     { header: "Business Name", key: "businessName", width: 25 },
     { header: "City", key: "city", width: 18 },
+    { header: "Phone", key: "phone", width: 18 },
+    { header: "Email", key: "email", width: 25 },
     { header: "Published Date", key: "publishDate", width: 15 },
     { header: "Source URL", key: "sourceUrl", width: 50 },
   ];
@@ -59,6 +61,8 @@ async function exportToExcel(entries, outputPath) {
       ownerNames: ownerNamesList.join(", "),
       businessName: entry.businessName,
       city: entry.city,
+      phone: entry.phone || "",
+      email: entry.email || "",
       publishDate: entry.publishDate || "",
       sourceUrl: entry.sourceUrl,
     });

@@ -365,10 +365,11 @@
       There's a safety limit on how many posts are processed in one run (for
       a very large range, only the first batch will be processed, and this
       will be noted in the log).
-      Save condition: an entry is only saved when BOTH Owner Name(s) AND
-      Business Name are found (having just one is not enough). For
-      partnerships with multiple owners, all names will be included. City is
-      an optional field - it only appears if mentioned in the text.
+      Save condition: an entry is saved when EITHER Owner Name(s) OR
+      Business Name is found (just one is enough - whichever field is
+      missing stays blank). For partnerships with multiple owners, all
+      names will be included. City, Phone, and Email are optional fields -
+      they only appear if explicitly mentioned in the text.
       Non-business content (movies/entertainment/general news) is
       automatically filtered out.
     </div>
@@ -410,6 +411,8 @@
             <th>Owner Name(s)</th>
             <th>Business Name</th>
             <th>City</th>
+            <th>Phone</th>
+            <th>Email</th>
             <th>Published</th>
             <th>Source</th>
           </tr>
@@ -479,6 +482,8 @@
         })()}</td>
         <td>${e.businessName ? escapeHtml(e.businessName) : '<span class="empty-val">—</span>'}</td>
         <td>${e.city ? escapeHtml(e.city) : '<span class="empty-val">—</span>'}</td>
+        <td>${e.phone ? escapeHtml(e.phone) : '<span class="empty-val">—</span>'}</td>
+        <td>${e.email ? escapeHtml(e.email) : '<span class="empty-val">—</span>'}</td>
         <td>${e.publishDate ? escapeHtml(e.publishDate) : '<span class="empty-val">—</span>'}</td>
         <td><a class="source-link" href="${e.sourceUrl}" target="_blank">view →</a></td>
       </tr>
@@ -527,11 +532,13 @@
       document.getElementById('statSaved').textContent = data.totalSaved;
       document.getElementById('statTotalDb').textContent = data.totalInDatabase;
 
-      if (!data.totalPostsFound || data.totalPostsFound === 0) {
-        renderLogs(['0 posts found for the selected date range.']);
-      } else {
-        renderLogs(data.logs);
-      }
+      const withData = data.postsWithData || 0;
+      const withoutData = data.postsWithoutData || 0;
+      const summaryMessage =
+        `From ${startDate} to ${endDate}, we found ${data.totalPostsFound} post(s). ` +
+        `Owner Name or Business Name was found in ${withData} of them, ` +
+        `and not found in ${withoutData} of them.`;
+      renderLogs([summaryMessage]);
       renderTable(data.entries);
     } catch (err) {
       setStatus('done', 'done');

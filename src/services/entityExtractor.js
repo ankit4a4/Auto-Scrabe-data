@@ -48,13 +48,17 @@ For each company entry, extract:
 - businessName: the company / brand name, ONLY if explicitly named in the text.
 - ownerNames: an ARRAY of the full name(s) of ONLY the people explicitly identified as owner/founder/co-founder/CEO of THIS specific company. Empty array if none named for this company.
 - city: a city name for THIS specific company, ONLY if explicitly mentioned in connection with it in the text. Otherwise null.
+- phone: a phone/contact number for THIS specific company or its owner, ONLY if explicitly written in the text. Otherwise null.
+- email: an email address for THIS specific company or its owner, ONLY if explicitly written in the text. Otherwise null.
 
 STRICT RULES (very important):
 1. Do NOT guess, infer, or use outside/general knowledge. If a field is not directly stated in the article text, leave it as null (or empty array for ownerNames).
 2. Do NOT assume a company's headquarters city from general knowledge - only use a city if the article text itself mentions it in connection with that company.
 3. If a sentence implies the relationship (e.g. "Ritesh Agarwal started OYO in Gurugram"), that counts as explicit mention - extract it.
 4. Each company gets its OWN entry in the array, with its OWN owners - never merge people or companies together.
-5. Return ONLY valid JSON, no markdown, no explanation, no extra text.
+5. ownerNames must contain ONLY real person names. NEVER put the business/brand name itself into ownerNames, and never put generic placeholders like "the company", "the team", "unknown", or "not mentioned" - if no real person's name is stated, leave ownerNames as an empty array.
+6. Never fabricate a phone number or email address - only use one if it is written verbatim in the article text.
+7. Return ONLY valid JSON, no markdown, no explanation, no extra text.
 
 ARTICLE TITLE: ${article.title || "N/A"}
 
@@ -64,7 +68,7 @@ ${article.textContent}
 """
 
 Return strictly in this JSON shape (companies is an array - one item per distinct company found, empty array if none qualify):
-{"companies": [{"businessName": string or null, "ownerNames": string[], "city": string or null}]}`;
+{"companies": [{"businessName": string or null, "ownerNames": string[], "city": string or null, "phone": string or null, "email": string or null}]}`;
 }
 
 function safeParseJson(rawText) {
@@ -135,8 +139,10 @@ const GEMINI_SCHEMA = {
           businessName: { type: "string", nullable: true },
           ownerNames: { type: "array", items: { type: "string" } },
           city: { type: "string", nullable: true },
+          phone: { type: "string", nullable: true },
+          email: { type: "string", nullable: true },
         },
-        required: ["businessName", "ownerNames", "city"],
+        required: ["businessName", "ownerNames", "city", "phone", "email"],
       },
     },
   },
@@ -300,11 +306,26 @@ async function extractEntities(article) {
           .map((c) => ({
             businessName: c?.businessName || null,
             ownerNames: Array.isArray(c?.ownerNames)
-              ? c.ownerNames.map((n) => (typeof n === "string" ? n.trim() : n)).filter(Boolean)
+              ? c.ownerNames
+                  .map((n) => (typeof n === "string" ? n.trim() : n))
+                  .filter(Boolean)
+                  // Safety check: sometimes a model mistakenly puts the
+                  // business/brand name itself into ownerNames (as if it
+                  // were a person). Since that's not a real owner name,
+                  // we filter those out here.
+                  .filter((n) => {
+                    if (!c?.businessName) return true;
+                    return n.toLowerCase().trim() !== c.businessName.toLowerCase().trim();
+                  })
+                  // Also filter out generic non-name placeholders a model
+                  // might produce instead of leaving the field empty
+                  .filter((n) => !/^(unknown|n\/a|not mentioned|not specified|none|the company|the team|team)$/i.test(n))
               : c?.ownerName
               ? [c.ownerName]
               : [],
             city: c?.city || null,
+            phone: c?.phone ? String(c.phone).trim() || null : null,
+            email: c?.email ? String(c.email).trim() || null : null,
           }))
           // Remove empty/junk entries (where neither an owner nor a business name was found)
           .filter((c) => c.businessName || c.ownerNames.length > 0);

@@ -1,8 +1,5 @@
 const { fetchWithAutoDetect } = require("./renderModeDetector");
-const {
-  detectPatternFromHtml,
-  COMMON_PATTERNS,
-} = require("./paginationBuilder");
+const { detectPatternFromHtml, COMMON_PATTERNS } = require("./paginationBuilder");
 const { extractPostLinksWithDates } = require("./linkExtractor");
 const { extractArticle } = require("./contentExtractor");
 const { extractEntities } = require("./entityExtractor");
@@ -44,13 +41,7 @@ async function runWithLimit(items, limit, worker) {
  * maxPagesToCrawl, with the final decision based on the accurate date
  * fetched from each post's own page.
  */
-async function collectPostsInDateRange({
-  categoryUrl,
-  startDate,
-  endDate,
-  page1Html,
-  log,
-}) {
+async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1Html, log }) {
   const seen = new Set();
   const candidates = []; // { url, dateHint }
   const detectedPattern = detectPatternFromHtml(page1Html, categoryUrl);
@@ -101,7 +92,7 @@ async function collectPostsInDateRange({
 
     log(
       `Page ${pageNum}: found ${linksWithDates.length} post links, ${newOnThisPage} new ` +
-        `(candidates so far: ${candidates.length}${hadAnyDateHint ? "" : ", no date shown in listing"})`,
+        `(candidates so far: ${candidates.length}${hadAnyDateHint ? "" : ", no date shown in listing"})`
     );
 
     if (pageNum > 1 && newOnThisPage === 0) {
@@ -115,17 +106,14 @@ async function collectPostsInDateRange({
       // This fallback is only tried the first time (pageNum===2) - if that
       // also yields nothing new, we assume pagination has truly ended.
       if (pageNum === 2) {
-        log(
-          `No new posts found via Page 2 URL - checking for JS-driven pagination (Load More/Next button)...`,
-        );
+        log(`No new posts found via Page 2 URL - checking for JS-driven pagination (Load More/Next button)...`);
         try {
-          const { candidates: clickCandidates, stepsDone } =
-            await clickThroughPagination({
-              categoryUrl,
-              startDate,
-              maxSteps: config.maxLoadMoreClicks,
-              onProgress: log,
-            });
+          const { candidates: clickCandidates, stepsDone } = await clickThroughPagination({
+            categoryUrl,
+            startDate,
+            maxSteps: config.maxLoadMoreClicks,
+            onProgress: log,
+          });
 
           let newFromExpansion = 0;
           for (const { url, dateHint } of clickCandidates) {
@@ -140,29 +128,21 @@ async function collectPostsInDateRange({
           }
 
           if (stepsDone > 0) {
-            log(
-              `Click-based pagination found ${newFromExpansion} new posts (candidates so far: ${candidates.length})`,
-            );
+            log(`Click-based pagination found ${newFromExpansion} new posts (candidates so far: ${candidates.length})`);
           } else {
-            log(
-              `No click-based pagination control found - pagination appears to have ended`,
-            );
+            log(`No click-based pagination control found - pagination appears to have ended`);
           }
         } catch (err) {
           log(`Error while trying click-based pagination: ${err.message}`);
         }
       } else {
-        log(
-          `No new posts found on page ${pageNum}, pagination appears to have ended`,
-        );
+        log(`No new posts found on page ${pageNum}, pagination appears to have ended`);
       }
       break;
     }
 
     if (stopAfterThisPage) {
-      log(
-        `Found posts older than the range on page ${pageNum}, stopping further crawling`,
-      );
+      log(`Found posts older than the range on page ${pageNum}, stopping further crawling`);
       break;
     }
 
@@ -194,38 +174,33 @@ async function collectPostsInDateRange({
  * Multi-company case: a single post/article can yield multiple companies
  * (e.g. roundup articles) as separate entries - they are never mixed together.
  */
-async function runScrapePipeline({
-  categoryUrl,
-  startDate,
-  endDate,
-  onProgress,
-}) {
+async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }) {
   const log = (msg) => onProgress && onProgress(msg);
 
   log(`Loading category page: ${categoryUrl}`);
   const { html: page1Html } = await fetchWithAutoDetect(categoryUrl);
 
-  log(
-    `Target date range: ${formatDateForLog(startDate)} to ${formatDateForLog(endDate)}, starting to crawl pages...`,
-  );
-  const candidates = await collectPostsInDateRange({
-    categoryUrl,
-    startDate,
-    endDate,
-    page1Html,
-    log,
-  });
+  log(`Target date range: ${formatDateForLog(startDate)} to ${formatDateForLog(endDate)}, starting to crawl pages...`);
+  const candidates = await collectPostsInDateRange({ categoryUrl, startDate, endDate, page1Html, log });
 
   if (candidates.length === 0) {
     log(`No posts found around this date range.`);
-    return { totalPostsFound: 0, totalSaved: 0, entries: [], skipReasons: {} };
+    return {
+      totalPostsFound: 0,
+      totalCandidatesChecked: 0,
+      totalSaved: 0,
+      postsWithData: 0,
+      postsWithoutData: 0,
+      entries: [],
+      skipReasons: {},
+    };
   }
 
   let targetLinks = candidates;
   if (candidates.length > config.maxDateRangePosts) {
     log(
       `Found ${candidates.length} candidate posts in range, which exceeds the max limit (${config.maxDateRangePosts}). ` +
-        `Only the first ${config.maxDateRangePosts} will be processed - try a smaller range or increase MAX_DATE_RANGE_POSTS.`,
+        `Only the first ${config.maxDateRangePosts} will be processed - try a smaller range or increase MAX_DATE_RANGE_POSTS.`
     );
     targetLinks = candidates.slice(0, config.maxDateRangePosts);
   }
@@ -253,8 +228,7 @@ async function runScrapePipeline({
         html = result.html;
       } catch (err) {
         skipReasons.fetchError++;
-        if (sampleErrors.length < 3)
-          sampleErrors.push(`Fetch failed (${postUrl}): ${err.message}`);
+        if (sampleErrors.length < 3) sampleErrors.push(`Fetch failed (${postUrl}): ${err.message}`);
         return null;
       }
 
@@ -283,18 +257,16 @@ async function runScrapePipeline({
         companies = await extractEntities(article); // returns an ARRAY - each company is a separate entry
       } catch (err) {
         skipReasons.aiError++;
-        if (sampleErrors.length < 3)
-          sampleErrors.push(
-            `AI extraction failed (${postUrl}): ${err.message}`,
-          );
+        if (sampleErrors.length < 3) sampleErrors.push(`AI extraction failed (${postUrl}): ${err.message}`);
         return null;
       }
 
-      // SAVE CONDITION (per company): at least one owner name AND a business
-      // name, both are required. A single post/article can qualify MULTIPLE
+      // SAVE CONDITION (per company): at least ONE of owner name OR business
+      // name is enough (not both required). Whichever field is missing is
+      // simply left blank. A single post/article can qualify MULTIPLE
       // companies (e.g. a roundup article) - each becomes its own separate entry.
       const validCompanies = (companies || []).filter(
-        (c) => (c.ownerNames && c.ownerNames.length > 0) || c.businessName,
+        (c) => (c.ownerNames && c.ownerNames.length > 0) || c.businessName
       );
 
       if (validCompanies.length === 0) {
@@ -306,31 +278,57 @@ async function runScrapePipeline({
         ownerNames: c.ownerNames,
         businessName: c.businessName,
         city: c.city,
+        phone: c.phone,
+        email: c.email,
         publishDate: formatDateForLog(actualDate),
         sourceUrl: postUrl,
       }));
-    },
+    }
   );
 
   const finalEntries = processed
     .filter((result) => Array.isArray(result)) // removes both null (skipped) and {error} entries
     .flat(); // flattens multiple company-entries that came from a single post
 
+  // Per-post tracking (not per-company) for the summary message: how many
+  // of the posts we looked at actually yielded owner/business info, vs how
+  // many didn't.
+  //
+  // IMPORTANT: "found" here must mean "confirmed to actually be within the
+  // requested date range" (via the post's own page - the accurate check),
+  // NOT "how many candidate links we attempted to process" (targetLinks.length,
+  // which is really just min(candidates, maxDateRangePosts) and is an
+  // internal safety cap, not a meaningful number to show the user).
+  //
+  // A post only counts as "found" if its actual date was confirmed to fall
+  // inside the range. Posts that were fetch errors, had no content, or
+  // whose date couldn't be determined at all are excluded entirely (we
+  // genuinely don't know if they belong in the range). Posts confirmed
+  // out-of-range are also excluded (they don't belong in the range at all).
+  // AI errors / no-owner-or-business-found DO count as "found" (their date
+  // was confirmed in-range) - they just didn't yield data.
+  const postsWithData = processed.filter((r) => Array.isArray(r) && r.length > 0).length;
+  const postsWithoutData = skipReasons.aiError + skipReasons.noEntities;
+  const postsFoundInRange = postsWithData + postsWithoutData;
+
   log(
-    `Final saved entries (companies): ${finalEntries.length} (from ${targetLinks.length} posts processed - ` +
-      `a single post can yield multiple companies)`,
+    `Final saved entries (companies): ${finalEntries.length} (from ${postsFoundInRange} posts confirmed within ` +
+      `the date range, out of ${targetLinks.length} candidate posts checked - a single post can yield multiple companies)`
   );
   log(
     `Skip breakdown -> no content: ${skipReasons.noContent}, fetch errors: ${skipReasons.fetchError}, ` +
       `AI errors: ${skipReasons.aiError}, no owner/business found: ${skipReasons.noEntities}, ` +
       `out of date range (confirmed via post's own page): ${skipReasons.outOfDateRange}, ` +
-      `date unknown (skipped, never guessed): ${skipReasons.dateUnknown}`,
+      `date unknown (skipped, never guessed): ${skipReasons.dateUnknown}`
   );
   sampleErrors.forEach((e) => log(`ERROR SAMPLE: ${e}`));
 
   return {
-    totalPostsFound: targetLinks.length,
+    totalPostsFound: postsFoundInRange,
+    totalCandidatesChecked: targetLinks.length,
     totalSaved: finalEntries.length,
+    postsWithData,
+    postsWithoutData,
     entries: finalEntries,
     skipReasons,
   };
