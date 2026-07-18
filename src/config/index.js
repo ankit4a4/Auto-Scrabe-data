@@ -22,6 +22,21 @@ module.exports = {
   openrouterModel: process.env.OPENROUTER_MODEL || "openrouter/free",
   openrouterMinIntervalMs: parseInt(process.env.OPENROUTER_MIN_INTERVAL_MS || "3100", 10),
 
+  // --- Cerebras (free tier: ~30 req/min, OpenAI-compatible, very high daily volume) ---
+  cerebrasApiKey: process.env.CEREBRAS_API_KEY || "",
+  cerebrasModel: process.env.CEREBRAS_MODEL || "llama3.1-70b",
+  cerebrasMinIntervalMs: parseInt(process.env.CEREBRAS_MIN_INTERVAL_MS || "2100", 10),
+
+  // --- Mistral (free "Experiment" tier: ~1 req/sec, OpenAI-compatible) ---
+  mistralApiKey: process.env.MISTRAL_API_KEY || "",
+  mistralModel: process.env.MISTRAL_MODEL || "mistral-small-latest",
+  mistralMinIntervalMs: parseInt(process.env.MISTRAL_MIN_INTERVAL_MS || "1100", 10),
+
+  // --- NVIDIA NIM (free tier via build.nvidia.com, OpenAI-compatible) ---
+  nvidiaApiKey: process.env.NVIDIA_API_KEY || "",
+  nvidiaModel: process.env.NVIDIA_MODEL || "meta/llama-3.3-70b-instruct",
+  nvidiaMinIntervalMs: parseInt(process.env.NVIDIA_MIN_INTERVAL_MS || "3000", 10),
+
   concurrency: parseInt(process.env.CONCURRENCY || "3", 10),
   pageTimeout: parseInt(process.env.PAGE_TIMEOUT || "25000", 10),
 

@@ -572,8 +572,19 @@
     await loadResults();
   }
 
-  function exportExcel() {
+  async function exportExcel() {
     window.location.href = '/api/export/excel';
+
+    // The backend clears its saved data as part of the export (see
+    // /api/export/excel in scrape.js). But that only clears data on disk -
+    // the table/stats already drawn on THIS page are just static DOM from
+    // the last scrape, so they must be explicitly refreshed here too,
+    // otherwise old data stays visible on screen until a manual reload.
+    setTimeout(async () => {
+      document.getElementById('statPostsFound').textContent = '—';
+      document.getElementById('statSaved').textContent = '—';
+      await loadResults(); // re-fetches /api/results (now empty) and re-renders the (now empty) table + statTotalDb
+    }, 800); // small delay so the browser has started the file download before we touch the page
   }
 
   // Data resets on every page load/reload - it only persists within the

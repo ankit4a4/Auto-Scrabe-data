@@ -5,10 +5,10 @@ const config = require("../config");
  * Multi-provider AI entity extractor.
  *
  * Previously only Gemini was used (free tier 15 req/min), which was a
- * bottleneck. Now three providers are rotated round-robin: Gemini + Groq +
- * OpenRouter. Each provider has its own independent rate-limit clock, so
- * combined throughput is the SUM of all three rate limits (more providers
- * = more speed).
+ * bottleneck. Now up to six providers are rotated round-robin: Gemini +
+ * Groq + OpenRouter + Cerebras + Mistral + NVIDIA NIM. Each provider has
+ * its own independent rate-limit clock, so combined throughput is the SUM
+ * of all active providers' rate limits (more providers = more speed).
  *
  * The more API keys you put in .env, the faster/more parallel the scraping
  * will be. If only one key is set, only that one is used (just a bit slower).
@@ -242,6 +242,42 @@ function buildProviders() {
         },
       }),
       scheduleSlot: makeLimiter(config.openrouterMinIntervalMs),
+    });
+  }
+
+  if (isConfigured(config.cerebrasApiKey)) {
+    providers.push({
+      name: "cerebras",
+      call: makeOpenAiCompatibleCaller({
+        baseUrl: "https://api.cerebras.ai/v1",
+        apiKey: config.cerebrasApiKey,
+        model: config.cerebrasModel,
+      }),
+      scheduleSlot: makeLimiter(config.cerebrasMinIntervalMs),
+    });
+  }
+
+  if (isConfigured(config.mistralApiKey)) {
+    providers.push({
+      name: "mistral",
+      call: makeOpenAiCompatibleCaller({
+        baseUrl: "https://api.mistral.ai/v1",
+        apiKey: config.mistralApiKey,
+        model: config.mistralModel,
+      }),
+      scheduleSlot: makeLimiter(config.mistralMinIntervalMs),
+    });
+  }
+
+  if (isConfigured(config.nvidiaApiKey)) {
+    providers.push({
+      name: "nvidia",
+      call: makeOpenAiCompatibleCaller({
+        baseUrl: "https://integrate.api.nvidia.com/v1",
+        apiKey: config.nvidiaApiKey,
+        model: config.nvidiaModel,
+      }),
+      scheduleSlot: makeLimiter(config.nvidiaMinIntervalMs),
     });
   }
 
