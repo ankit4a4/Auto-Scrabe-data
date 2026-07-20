@@ -5,14 +5,32 @@ that range, extracting **Owner Name(s) / Business Name / City** using
 Gemini, Groq, and/or OpenRouter (whichever API keys you configure).
 
 ## Save Condition
-- An entry is only saved when **both** Owner Name(s) **and** Business Name
-  are found for that company (having just one is not enough).
+- An entry is saved when **either** Owner Name(s) **or** Business Name is
+  found for that company (just one is enough - whichever field is missing
+  stays blank).
 - A single article can profile **multiple separate companies** (e.g. a
   roundup piece) - each becomes its own entry; owners are never mixed
   across companies.
 - City is a bonus field - included only if mentioned in the text.
+- Phone and Email are enriched automatically via a free web lookup (see
+  "Phone/Email Enrichment" below) whenever they aren't already found in
+  the article itself.
 - Non-business content (movie reviews, entertainment, sports, general news)
   is automatically filtered out by the AI.
+
+## Phone/Email Enrichment
+For every saved entry, if Phone and/or Email wasn't found directly in the
+article text, the system does a free best-effort lookup:
+1. Searches DuckDuckGo's lite HTML endpoint for `"<Business Name> <City> phone email contact"`.
+2. Regex-scans the search result snippets/links for a phone number and email address.
+3. If not found there, fetches the top 1-2 result pages and scans those too.
+4. Whatever is found is filled in; whatever isn't stays blank - nothing is guessed.
+
+This uses no paid API and no AI credits (pure scraping + regex), so it's
+free but not guaranteed - DuckDuckGo may occasionally rate-limit or change
+its page structure, and for common business names it can occasionally
+pick up a different business's contact info. Requests are spaced out to
+stay polite and reduce the chance of being blocked.
 
 ## Setup
 
@@ -49,6 +67,10 @@ and requests are rotated round-robin across all configured providers):
 ## API Usage
 
 ### 1. Run a scrape
+A scrape can take a while (many posts × AI calls × contact lookups), so
+`POST /api/scrape` starts the job in the background and returns a `jobId`
+right away instead of making you wait on one long request.
+
 ```bash
 POST /api/scrape
 Content-Type: application/json
@@ -59,9 +81,17 @@ Content-Type: application/json
   "endDate": "2026-06-30"
 }
 ```
+Response: `{ "jobId": "..." }`
 
-Response includes `totalPostsFound`, `totalSaved`, `entries[]`, and
-`logs[]` (step-by-step progress).
+Poll for progress + the final result:
+```bash
+GET /api/scrape-progress/:jobId
+```
+Response: `{ status: "running" | "done" | "error", percent: 0-100, logs: [...], result: {...} | null, error: "..." | null }`
+
+Once `status` is `"done"`, `result` has the same shape the old blocking
+response used to: `totalPostsFound`, `totalSaved`, `entries[]`, `logs[]`,
+`totalInDatabase`.
 
 ### 2. View all saved results so far
 ```bash

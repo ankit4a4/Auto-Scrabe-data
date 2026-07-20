@@ -3,24 +3,32 @@ const { detectPatternFromHtml, COMMON_PATTERNS } = require("./paginationBuilder"
 const { extractPostLinksWithDates } = require("./linkExtractor");
 const { extractArticle } = require("./contentExtractor");
 const { extractEntities } = require("./entityExtractor");
+const { enrichContact } = require("./contactEnricher");
 const { clickThroughPagination } = require("./loadMoreExpander");
 const { parseDateSafe, formatDateForLog } = require("../utils/dateUtils");
 const config = require("../config");
 
-// Small concurrency-limiter (no extra library needed)
-async function runWithLimit(items, limit, worker) {
+// Small concurrency-limiter (no extra library needed). onItemDone (optional)
+// is called after each item finishes (success or failure) with how many
+// items are done so far out of the total - used to drive the progress %.
+async function runWithLimit(items, limit, worker, onItemDone) {
   const results = [];
   let index = 0;
+  let doneCount = 0;
 
   async function next() {
     if (index >= items.length) return;
     const currentIndex = index++;
     const item = items[currentIndex];
+    let result;
     try {
-      results[currentIndex] = await worker(item);
+      result = await worker(item);
     } catch (err) {
-      results[currentIndex] = { error: err.message, item };
+      result = { error: err.message, item };
     }
+    results[currentIndex] = result;
+    doneCount++;
+    if (onItemDone) onItemDone(doneCount, items.length, result);
     await next();
   }
 
@@ -166,24 +174,32 @@ async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1H
  * If a post's date cannot be determined at all (neither from the listing
  * nor the post's own page), it is SKIPPED as "date unknown" - we never guess.
  *
- * Save condition (per company): at least one name in ownerNames AND a
- * businessName - BOTH are required. City is just a bonus field.
+ * Save condition (per company): at least one name in ownerNames OR a
+ * businessName is enough (not both required). City is just a bonus field.
  * Business-relevance filter: non-business content (movies/entertainment/
  * general-news) is automatically filtered out by the AI.
  * Partnership case: ownerNames is an ARRAY, so 2+ owners can appear.
  * Multi-company case: a single post/article can yield multiple companies
  * (e.g. roundup articles) as separate entries - they are never mixed together.
  */
-async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }) {
+async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress, onPercent, onStats }) {
   const log = (msg) => onProgress && onProgress(msg);
+  const setPercent = (p) => onPercent && onPercent(Math.min(99, Math.max(0, Math.round(p))));
+  const emitStats = (stats) => onStats && onStats(stats);
 
+  setPercent(1);
   log(`Loading category page: ${categoryUrl}`);
   const { html: page1Html } = await fetchWithAutoDetect(categoryUrl);
 
+  setPercent(5);
   log(`Target date range: ${formatDateForLog(startDate)} to ${formatDateForLog(endDate)}, starting to crawl pages...`);
   const candidates = await collectPostsInDateRange({ categoryUrl, startDate, endDate, page1Html, log });
 
+  setPercent(15);
+  emitStats({ totalFound: candidates.length, totalToCheck: 0, checked: 0, withData: 0, withoutData: 0 });
   if (candidates.length === 0) {
+    setPercent(100);
+    emitStats({ totalFound: 0, totalToCheck: 0, checked: 0, withData: 0, withoutData: 0 });
     log(`No posts found around this date range.`);
     return {
       totalPostsFound: 0,
@@ -206,6 +222,7 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
   }
 
   log(`${targetLinks.length} posts will be processed for this date range`);
+  emitStats({ totalFound: candidates.length, totalToCheck: targetLinks.length, checked: 0, withData: 0, withoutData: 0 });
 
   // Process each post: fetch -> confirm actual date -> extract content -> AI extract -> check conditions
   const skipReasons = {
@@ -217,6 +234,8 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
     dateUnknown: 0,
   };
   const sampleErrors = [];
+  let checkedCount = 0;
+  let withDataCount = 0;
 
   const processed = await runWithLimit(
     targetLinks,
@@ -274,6 +293,22 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
         return null;
       }
 
+      // Phone/Email enrichment: only for companies missing one or both -
+      // free DuckDuckGo-based lookup (no AI cost). Whatever isn't found
+      // stays blank, nothing is guessed. Only worth trying when we have a
+      // business name to search for.
+      for (const c of validCompanies) {
+        if ((!c.phone || !c.email) && c.businessName) {
+          try {
+            const found = await enrichContact({ businessName: c.businessName, city: c.city });
+            if (!c.phone && found.phone) c.phone = found.phone;
+            if (!c.email && found.email) c.email = found.email;
+          } catch {
+            /* enrichment lookup failed - just leave the field(s) blank */
+          }
+        }
+      }
+
       return validCompanies.map((c) => ({
         ownerNames: c.ownerNames,
         businessName: c.businessName,
@@ -283,6 +318,18 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
         publishDate: formatDateForLog(actualDate),
         sourceUrl: postUrl,
       }));
+    },
+    (doneCount, total, result) => {
+      setPercent(15 + (doneCount / total) * 84); // 15% -> 99% across this phase
+      checkedCount = doneCount;
+      if (Array.isArray(result) && result.length > 0) withDataCount++;
+      emitStats({
+        totalFound: candidates.length,
+        totalToCheck: total,
+        checked: checkedCount,
+        withData: withDataCount,
+        withoutData: checkedCount - withDataCount,
+      });
     }
   );
 
@@ -322,6 +369,7 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
       `date unknown (skipped, never guessed): ${skipReasons.dateUnknown}`
   );
   sampleErrors.forEach((e) => log(`ERROR SAMPLE: ${e}`));
+  onPercent && onPercent(100);
 
   return {
     totalPostsFound: postsFoundInRange,

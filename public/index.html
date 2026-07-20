@@ -257,6 +257,29 @@
     letter-spacing: 0.5px;
   }
 
+  .progress-bar-track {
+    width: 260px;
+    height: 8px;
+    background: var(--panel-border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+
+  .progress-percent {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+
   .results-header {
     display: flex;
     justify-content: space-between;
@@ -368,8 +391,11 @@
       Save condition: an entry is saved when EITHER Owner Name(s) OR
       Business Name is found (just one is enough - whichever field is
       missing stays blank). For partnerships with multiple owners, all
-      names will be included. City, Phone, and Email are optional fields -
-      they only appear if explicitly mentioned in the text.
+      names will be included. City is an optional field - it only appears
+      if explicitly mentioned in the text. Phone and Email are first taken
+      from the article text if present; if not, a free automatic lookup
+      tries to fill them in - if neither is found, they're simply left
+      blank.
       Non-business content (movies/entertainment/general news) is
       automatically filtered out.
     </div>
@@ -393,7 +419,11 @@
 
     <div class="loader-stage" id="loaderStage">
       <div class="spinner"></div>
-      <div class="loader-caption">Extracting data, please wait...</div>
+      <div class="progress-percent" id="progressPercent">0%</div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progressBarFill"></div>
+      </div>
+      <div class="loader-caption" id="loaderCaption">Extracting data, please wait...</div>
     </div>
 
     <div class="console" id="console">
@@ -490,6 +520,55 @@
     `).join('');
   }
 
+  function setProgress(percent) {
+    const p = Math.max(0, Math.min(100, Math.round(percent || 0)));
+    document.getElementById('progressPercent').textContent = p + '%';
+    document.getElementById('progressBarFill').style.width = p + '%';
+  }
+
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+  }
+
+  function renderLiveSummary(stats) {
+    if (!stats || !stats.totalFound) {
+      consoleEl.innerHTML = '<div class="line">Scanning category pages for posts...</div>';
+      return;
+    }
+    if (!stats.totalToCheck) {
+      consoleEl.innerHTML = `<div class="line">Found ${stats.totalFound} post(s) so far. Preparing to check them...</div>`;
+      return;
+    }
+    consoleEl.innerHTML =
+      `<div class="line">Found ${stats.totalFound} post(s). Checked ${stats.checked} of ${stats.totalToCheck} - ` +
+      `${stats.withData} with data, ${stats.withoutData} without data.</div>`;
+  }
+
+  // Polls /api/scrape-progress/:jobId until the job is done or errored,
+  // updating the live percent + a simple summary line on screen as it goes.
+  async function pollJobUntilDone(jobId) {
+    while (true) {
+      await sleep(1200);
+
+      let data;
+      try {
+        const res = await fetch(`/api/scrape-progress/${jobId}`);
+        data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'progress check failed');
+      } catch (err) {
+        // Transient network hiccup while polling - just try again next tick
+        continue;
+      }
+
+      setProgress(data.percent);
+      renderLiveSummary(data.stats);
+
+      if (data.status === 'done') return { ok: true, result: data.result };
+      if (data.status === 'error') return { ok: false, error: data.error };
+      // else status === 'running' -> keep polling
+    }
+  }
+
   async function runScrape() {
     const categoryUrl = document.getElementById('categoryUrl').value.trim();
     const startDate = document.getElementById('startDate').value;
@@ -510,24 +589,35 @@
 
     runBtn.disabled = true;
     setStatus('running', 'running...');
+    setProgress(0);
     renderLogs([`Starting scrape (${startDate} to ${endDate}), this may take a moment...`]);
     startLoaderAnimation();
 
     try {
-      const res = await fetch('/api/scrape', {
+      const startRes = await fetch('/api/scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ categoryUrl, startDate, endDate }),
       });
-      const data = await res.json();
+      const startData = await startRes.json();
 
-      if (!res.ok) {
+      if (!startRes.ok || !startData.jobId) {
         setStatus('done', 'done');
-        renderLogs(['This website is fully secured and could not be scanned. Please try a different website or date range.']);
+        renderLogs([startData.error || 'This website is fully secured and could not be scanned. Please try a different website or date range.']);
         return;
       }
 
+      const outcome = await pollJobUntilDone(startData.jobId);
+
+      if (!outcome.ok) {
+        setStatus('done', 'done');
+        renderLogs([outcome.error || 'This website is fully secured and could not be scanned. Please try a different website or date range.']);
+        return;
+      }
+
+      const data = outcome.result;
       setStatus('done', 'done');
+      setProgress(100);
       document.getElementById('statPostsFound').textContent = data.totalPostsFound;
       document.getElementById('statSaved').textContent = data.totalSaved;
       document.getElementById('statTotalDb').textContent = data.totalInDatabase;
@@ -535,9 +625,9 @@
       const withData = data.postsWithData || 0;
       const withoutData = data.postsWithoutData || 0;
       const summaryMessage =
-        `From ${startDate} to ${endDate}, we found ${data.totalPostsFound} post(s). ` +
-        `Owner Name or Business Name was found in ${withData} of them, ` +
-        `and not found in ${withoutData} of them.`;
+        `Found ${data.totalPostsFound} post(s) between ${startDate} and ${endDate}. ` +
+        `Data (Owner Name or Business Name) was found in ${withData} of them, ` +
+        `and not found in ${withoutData} of them. Total saved entries: ${data.totalSaved}.`;
       renderLogs([summaryMessage]);
       renderTable(data.entries);
     } catch (err) {
