@@ -334,4 +334,34 @@ async function enrichContact({ businessName, city }) {
   return { phone: phone || null, email: email || null };
 }
 
-module.exports = { enrichContact };
+/**
+ * Given a business name + optional city, runs just the search step and
+ * returns the first usable (non-social, non-video) result domain as a
+ * best-effort "official website" guess - used by the pipeline to discover
+ * a company's website when the article itself didn't mention one, so the
+ * dedicated website contact-crawl (websiteContactExtractor.js) has
+ * somewhere to go visit.
+ */
+async function findOfficialWebsite({ businessName, city }) {
+  if (!businessName) return null;
+
+  const query = `${businessName} ${city || ""} official website`.trim();
+  try {
+    const results = await gatherSearchResults(query);
+    if (results.length === 0) return null;
+    return results[0].link;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = {
+  enrichContact,
+  findOfficialWebsite,
+  // Shared regex/parsing helpers, reused by websiteContactExtractor.js so
+  // both modules apply the exact same "what counts as junk" rules.
+  extractEmailFrom,
+  extractPhoneFrom,
+  isJunkEmail,
+  EMAIL_REGEX,
+};

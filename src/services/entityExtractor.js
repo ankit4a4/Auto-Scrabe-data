@@ -48,6 +48,7 @@ For each company entry, extract:
 - businessName: the company / brand name, ONLY if explicitly named in the text.
 - ownerNames: an ARRAY of the full name(s) of ONLY the people explicitly identified as owner/founder/co-founder/CEO of THIS specific company. Empty array if none named for this company.
 - city: a city name for THIS specific company, ONLY if explicitly mentioned in connection with it in the text. Otherwise null.
+- website: THIS specific company's official website/domain (e.g. "www.example.com" or "example.com"), ONLY if explicitly written in the text (as a URL or a domain-looking string). Otherwise null.
 - phone: a phone/contact number for THIS specific company or its owner, ONLY if explicitly written in the text. Otherwise null.
 - email: an email address for THIS specific company or its owner, ONLY if explicitly written in the text. Otherwise null.
 
@@ -57,7 +58,7 @@ STRICT RULES (very important):
 3. If a sentence implies the relationship (e.g. "Ritesh Agarwal started OYO in Gurugram"), that counts as explicit mention - extract it.
 4. Each company gets its OWN entry in the array, with its OWN owners - never merge people or companies together.
 5. ownerNames must contain ONLY real person names. NEVER put the business/brand name itself into ownerNames, and never put generic placeholders like "the company", "the team", "unknown", or "not mentioned" - if no real person's name is stated, leave ownerNames as an empty array.
-6. Never fabricate a phone number or email address - only use one if it is written verbatim in the article text.
+6. Never fabricate a phone number, email address, or website - only use one if it is written verbatim in the article text.
 7. Return ONLY valid JSON, no markdown, no explanation, no extra text.
 
 ARTICLE TITLE: ${article.title || "N/A"}
@@ -68,7 +69,7 @@ ${article.textContent}
 """
 
 Return strictly in this JSON shape (companies is an array - one item per distinct company found, empty array if none qualify):
-{"companies": [{"businessName": string or null, "ownerNames": string[], "city": string or null, "phone": string or null, "email": string or null}]}`;
+{"companies": [{"businessName": string or null, "ownerNames": string[], "city": string or null, "website": string or null, "phone": string or null, "email": string or null}]}`;
 }
 
 function safeParseJson(rawText) {
@@ -139,10 +140,11 @@ const GEMINI_SCHEMA = {
           businessName: { type: "string", nullable: true },
           ownerNames: { type: "array", items: { type: "string" } },
           city: { type: "string", nullable: true },
+          website: { type: "string", nullable: true },
           phone: { type: "string", nullable: true },
           email: { type: "string", nullable: true },
         },
-        required: ["businessName", "ownerNames", "city", "phone", "email"],
+        required: ["businessName", "ownerNames", "city", "website", "phone", "email"],
       },
     },
   },
@@ -360,6 +362,7 @@ async function extractEntities(article) {
               ? [c.ownerName]
               : [],
             city: c?.city || null,
+            website: c?.website ? String(c.website).trim() || null : null,
             phone: c?.phone ? String(c.phone).trim() || null : null,
             email: c?.email ? String(c.email).trim() || null : null,
           }))

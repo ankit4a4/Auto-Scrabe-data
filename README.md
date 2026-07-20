@@ -2,7 +2,8 @@
 
 Give it a category page URL + a date range, and it scrapes every post in
 that range, extracting **Owner Name(s) / Business Name / City** using
-Gemini, Groq, and/or OpenRouter (whichever API keys you configure).
+Gemini, Groq, and/or OpenRouter (whichever API keys you configure), then
+automatically finds **Website / Phone / Email** for each company.
 
 ## Save Condition
 - An entry is saved when **either** Owner Name(s) **or** Business Name is
@@ -12,25 +13,45 @@ Gemini, Groq, and/or OpenRouter (whichever API keys you configure).
   roundup piece) - each becomes its own entry; owners are never mixed
   across companies.
 - City is a bonus field - included only if mentioned in the text.
-- Phone and Email are enriched automatically via a free web lookup (see
-  "Phone/Email Enrichment" below) whenever they aren't already found in
-  the article itself.
+- Website, Phone, and Email are enriched automatically (see "Phone/Email
+  Enrichment" below) whenever they aren't already found in the article
+  itself - first by visiting the company's own website, then via a free
+  search-based fallback.
 - Non-business content (movie reviews, entertainment, sports, general news)
   is automatically filtered out by the AI.
 
 ## Phone/Email Enrichment
 For every saved entry, if Phone and/or Email wasn't found directly in the
-article text, the system does a free best-effort lookup:
-1. Searches DuckDuckGo's lite HTML endpoint for `"<Business Name> <City> phone email contact"`.
-2. Regex-scans the search result snippets/links for a phone number and email address.
-3. If not found there, fetches the top 1-2 result pages and scans those too.
-4. Whatever is found is filled in; whatever isn't stays blank - nothing is guessed.
+article text, the system does a free best-effort lookup, in two steps:
 
-This uses no paid API and no AI credits (pure scraping + regex), so it's
-free but not guaranteed - DuckDuckGo may occasionally rate-limit or change
-its page structure, and for common business names it can occasionally
-pick up a different business's contact info. Requests are spaced out to
-stay polite and reduce the chance of being blocked.
+**Step 1 - visit the company's own website (most reliable).**
+If a company's official website is known (either because the article text
+itself mentioned one, or a best-effort search finds a likely domain), the
+system automatically visits it using the existing Playwright setup and
+scrapes the homepage plus Contact / About / Team / Support / Privacy pages
+(discovered from the site's own nav/footer links, falling back to common
+guessed paths like `/contact-us` when a page type isn't linked anywhere):
+1. `mailto:` and `tel:` links are checked first (highest confidence).
+2. Visible page/footer text is regex-scanned for any email/phone.
+3. All matches are de-duplicated.
+4. The visit stops early once both an email and phone are found, and is
+   capped at `MAX_WEBSITE_CONTACT_PAGES` pages (default 6) per company.
+5. The discovered `Website` is saved alongside the entry.
+
+**Step 2 - search-engine fallback.** If a website couldn't be identified,
+or the site visit still left a field blank, the system falls back to
+searching DuckDuckGo's lite HTML endpoint for `"<Business Name> <City>
+phone email contact"`, regex-scanning the result snippets, and (if still
+needed) fetching the top 1-2 result pages.
+
+Whatever is found is filled in; whatever isn't found anywhere stays blank
+- nothing is ever guessed. This uses no paid API and no AI credits (pure
+scraping + regex), so it's free but not guaranteed - sites/search engines
+may occasionally rate-limit, block, or change their page structure, and
+for common business names the search-based fallback can occasionally pick
+up a different business's contact info. Requests are spaced out to stay
+polite and reduce the chance of being blocked. Set `DEBUG_ENRICH=0` to
+silence the step-by-step console trace.
 
 ## Setup
 

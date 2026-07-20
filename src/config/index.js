@@ -40,6 +40,11 @@ module.exports = {
   concurrency: parseInt(process.env.CONCURRENCY || "3", 10),
   pageTimeout: parseInt(process.env.PAGE_TIMEOUT || "25000", 10),
 
+  // Max number of pages (homepage + Contact/About/Team/Support/Privacy)
+  // the automatic website contact-extraction step will visit per company
+  // before giving up.
+  maxWebsiteContactPages: parseInt(process.env.MAX_WEBSITE_CONTACT_PAGES || "6", 10),
+
   // --- Post-count based scraping (instead of a page-range) ---
   defaultPostLimit: parseInt(process.env.DEFAULT_POST_LIMIT || "15", 10),
   maxPostLimit: parseInt(process.env.MAX_POST_LIMIT || "20", 10),

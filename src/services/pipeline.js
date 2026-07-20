@@ -3,7 +3,8 @@ const { detectPatternFromHtml, COMMON_PATTERNS } = require("./paginationBuilder"
 const { extractPostLinksWithDates } = require("./linkExtractor");
 const { extractArticle } = require("./contentExtractor");
 const { extractEntities } = require("./entityExtractor");
-const { enrichContact } = require("./contactEnricher");
+const { enrichContact, findOfficialWebsite } = require("./contactEnricher");
+const { extractContactFromWebsite, normalizeWebsiteUrl } = require("./websiteContactExtractor");
 const { clickThroughPagination } = require("./loadMoreExpander");
 const { parseDateSafe, formatDateForLog } = require("../utils/dateUtils");
 const config = require("../config");
@@ -293,11 +294,45 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress, 
         return null;
       }
 
-      // Phone/Email enrichment: only for companies missing one or both -
-      // free DuckDuckGo-based lookup (no AI cost). Whatever isn't found
-      // stays blank, nothing is guessed. Only worth trying when we have a
-      // business name to search for.
+      // Phone/Email enrichment, in two steps - nothing here uses AI credits,
+      // and whatever isn't found anywhere simply stays null (never guessed):
+      //
+      // Step 1 (new): if the company has (or we can discover) an official
+      // website, visit it directly with the existing Playwright setup and
+      // scrape the homepage + Contact/About/Team/Support/Privacy pages for
+      // publicly available emails/phones (mailto:/tel: links + visible text).
+      // This is the most reliable source when it works, since it's the
+      // company's own site rather than a search-engine guess.
+      //
+      // Step 2 (existing fallback): if a website wasn't identifiable, or the
+      // site visit still left a field blank, fall back to the original free
+      // DuckDuckGo/Bing search-based lookup.
       for (const c of validCompanies) {
+        if (!c.businessName && !c.website) continue;
+        if (c.phone && c.email) continue; // already fully known from the article text
+
+        // Identify the official website: prefer what the article itself
+        // said, otherwise make a best-effort search-based guess.
+        let website = normalizeWebsiteUrl(c.website);
+        if (!website && c.businessName) {
+          try {
+            website = await findOfficialWebsite({ businessName: c.businessName, city: c.city });
+          } catch {
+            /* discovery failed - website stays null, step 2 below can still run */
+          }
+        }
+        if (website) c.website = website;
+
+        if (website && (!c.phone || !c.email)) {
+          try {
+            const siteResult = await extractContactFromWebsite(website);
+            if (!c.email && siteResult.email) c.email = siteResult.email;
+            if (!c.phone && siteResult.phone) c.phone = siteResult.phone;
+          } catch {
+            /* site visit failed - just leave the field(s) blank, fall through to step 2 */
+          }
+        }
+
         if ((!c.phone || !c.email) && c.businessName) {
           try {
             const found = await enrichContact({ businessName: c.businessName, city: c.city });
@@ -313,6 +348,7 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress, 
         ownerNames: c.ownerNames,
         businessName: c.businessName,
         city: c.city,
+        website: c.website || null,
         phone: c.phone,
         email: c.email,
         publishDate: formatDateForLog(actualDate),

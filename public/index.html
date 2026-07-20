@@ -297,27 +297,60 @@
 
   table {
     width: 100%;
+    min-width: 1240px;
     border-collapse: collapse;
     font-size: 13px;
   }
 
   thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
     text-align: left;
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.6px;
     color: var(--text-dim);
-    padding: 10px 12px;
+    padding: 10px 14px;
+    background: #161c1f;
     border-bottom: 1px solid var(--panel-border);
     font-weight: 500;
+    white-space: nowrap;
   }
 
   tbody td {
-    padding: 10px 12px;
+    padding: 10px 14px;
     border-bottom: 1px solid var(--panel-border);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 260px;
   }
 
-  tbody tr:hover { background: var(--panel); }
+  /* Owner Name(s) and Email can legitimately hold several comma-separated
+     values - let those two wrap onto multiple lines instead of being
+     truncated, everything else stays single-line (the wrapper scrolls
+     horizontally instead of squeezing columns). */
+  tbody td.wrap-cell {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.5;
+  }
+
+  /* Per-column widths, tuned so nothing looks cramped - column order is
+     Owner Name(s) / Business Name / City / Website / Phone / Email /
+     Published / Source */
+  th:nth-child(1), td:nth-child(1) { min-width: 200px; max-width: 260px; }
+  th:nth-child(2), td:nth-child(2) { min-width: 170px; max-width: 220px; }
+  th:nth-child(3), td:nth-child(3) { min-width: 110px; max-width: 140px; }
+  th:nth-child(4), td:nth-child(4) { min-width: 190px; max-width: 240px; }
+  th:nth-child(5), td:nth-child(5) { min-width: 140px; max-width: 160px; }
+  th:nth-child(6), td:nth-child(6) { min-width: 200px; max-width: 260px; }
+  th:nth-child(7), td:nth-child(7) { min-width: 120px; max-width: 140px; }
+  th:nth-child(8), td:nth-child(8) { min-width: 80px; max-width: 90px; }
+
+  tbody tr:hover { background: rgba(255, 138, 61, 0.05); }
 
   .empty-val { color: var(--text-dim); font-style: italic; }
 
@@ -334,9 +367,26 @@
     background: var(--panel);
     border: 1px solid var(--panel-border);
     border-radius: 6px;
-    overflow: hidden;
     flex: 1;
-    overflow-y: auto;
+    overflow: auto;
+  }
+
+  /* Themed scrollbars (WebKit) so the horizontal/vertical scroll on the
+     results table matches the rest of the dark UI instead of looking like
+     a default browser scrollbar */
+  .table-wrap::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .table-wrap::-webkit-scrollbar-track {
+    background: var(--panel);
+  }
+  .table-wrap::-webkit-scrollbar-thumb {
+    background: var(--panel-border);
+    border-radius: 6px;
+  }
+  .table-wrap::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-dim);
   }
 
   .no-results {
@@ -441,6 +491,7 @@
             <th>Owner Name(s)</th>
             <th>Business Name</th>
             <th>City</th>
+            <th>Website</th>
             <th>Phone</th>
             <th>Email</th>
             <th>Published</th>
@@ -506,15 +557,16 @@
 
     body.innerHTML = entries.map(e => `
       <tr>
-        <td>${(() => {
+        <td class="wrap-cell">${(() => {
           const names = Array.isArray(e.ownerNames) ? e.ownerNames : (e.ownerName ? [e.ownerName] : []);
           return names.length ? escapeHtml(names.join(', ')) : '<span class="empty-val">—</span>';
         })()}</td>
-        <td>${e.businessName ? escapeHtml(e.businessName) : '<span class="empty-val">—</span>'}</td>
-        <td>${e.city ? escapeHtml(e.city) : '<span class="empty-val">—</span>'}</td>
-        <td>${e.phone ? escapeHtml(e.phone) : '<span class="empty-val">—</span>'}</td>
-        <td>${e.email ? escapeHtml(e.email) : '<span class="empty-val">—</span>'}</td>
-        <td>${e.publishDate ? escapeHtml(e.publishDate) : '<span class="empty-val">—</span>'}</td>
+        <td title="${e.businessName ? escapeHtml(e.businessName) : ''}">${e.businessName ? escapeHtml(e.businessName) : '<span class="empty-val">—</span>'}</td>
+        <td title="${e.city ? escapeHtml(e.city) : ''}">${e.city ? escapeHtml(e.city) : '<span class="empty-val">—</span>'}</td>
+        <td title="${e.website ? escapeHtml(e.website) : ''}">${e.website ? `<a class="source-link" href="${escapeHtml(e.website)}" target="_blank">${escapeHtml(e.website)}</a>` : '<span class="empty-val">—</span>'}</td>
+        <td title="${e.phone ? escapeHtml(e.phone) : ''}">${e.phone ? escapeHtml(e.phone) : '<span class="empty-val">—</span>'}</td>
+        <td class="wrap-cell">${e.email ? escapeHtml(e.email) : '<span class="empty-val">—</span>'}</td>
+        <td title="${e.publishDate ? escapeHtml(e.publishDate) : ''}">${e.publishDate ? escapeHtml(e.publishDate) : '<span class="empty-val">—</span>'}</td>
         <td><a class="source-link" href="${e.sourceUrl}" target="_blank">view →</a></td>
       </tr>
     `).join('');
