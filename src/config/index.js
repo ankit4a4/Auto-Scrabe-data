@@ -40,11 +40,6 @@ module.exports = {
   concurrency: parseInt(process.env.CONCURRENCY || "3", 10),
   pageTimeout: parseInt(process.env.PAGE_TIMEOUT || "25000", 10),
 
-  // Max number of pages (homepage + Contact/About/Team/Support/Privacy)
-  // the automatic website contact-extraction step will visit per company
-  // before giving up.
-  maxWebsiteContactPages: parseInt(process.env.MAX_WEBSITE_CONTACT_PAGES || "6", 10),
-
   // --- Post-count based scraping (instead of a page-range) ---
   defaultPostLimit: parseInt(process.env.DEFAULT_POST_LIMIT || "15", 10),
   maxPostLimit: parseInt(process.env.MAX_POST_LIMIT || "20", 10),
@@ -61,4 +56,14 @@ module.exports = {
   // truncated and a warning appears in the log. This prevents accidentally
   // processing 500+ posts.
   maxDateRangePosts: parseInt(process.env.MAX_DATE_RANGE_POSTS || "30", 10),
+
+  // --- Contact enrichment (phone/email lookup beyond the article text) ---
+  // Free DuckDuckGo search always runs first (no key needed). These paid
+  // APIs are optional fallbacks, tried in this order, only for whichever
+  // of phone/email is still missing - only add keys for the ones you sign
+  // up for; anything left blank is simply skipped.
+  hunterApiKey: process.env.HUNTER_API_KEY || "",
+  apolloApiKey: process.env.APOLLO_API_KEY || "",
+  lushaApiKey: process.env.LUSHA_API_KEY || "",
+  rocketreachApiKey: process.env.ROCKETREACH_API_KEY || "",
 };

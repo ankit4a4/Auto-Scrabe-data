@@ -3,33 +3,27 @@ const { detectPatternFromHtml, COMMON_PATTERNS } = require("./paginationBuilder"
 const { extractPostLinksWithDates } = require("./linkExtractor");
 const { extractArticle } = require("./contentExtractor");
 const { extractEntities } = require("./entityExtractor");
-const { enrichContact, findOfficialWebsite } = require("./contactEnricher");
-const { extractContactFromWebsite, normalizeWebsiteUrl } = require("./websiteContactExtractor");
 const { clickThroughPagination } = require("./loadMoreExpander");
 const { parseDateSafe, formatDateForLog } = require("../utils/dateUtils");
+const { startProgress, incrementProgress, finishProgress } = require("./progressTracker");
+const { enrichContactInfo } = require("./contactEnrichment");
 const config = require("../config");
 
-// Small concurrency-limiter (no extra library needed). onItemDone (optional)
-// is called after each item finishes (success or failure) with how many
-// items are done so far out of the total - used to drive the progress %.
+// Small concurrency-limiter (no extra library needed)
 async function runWithLimit(items, limit, worker, onItemDone) {
   const results = [];
   let index = 0;
-  let doneCount = 0;
 
   async function next() {
     if (index >= items.length) return;
     const currentIndex = index++;
     const item = items[currentIndex];
-    let result;
     try {
-      result = await worker(item);
+      results[currentIndex] = await worker(item);
     } catch (err) {
-      result = { error: err.message, item };
+      results[currentIndex] = { error: err.message, item };
     }
-    results[currentIndex] = result;
-    doneCount++;
-    if (onItemDone) onItemDone(doneCount, items.length, result);
+    if (onItemDone) onItemDone();
     await next();
   }
 
@@ -175,32 +169,24 @@ async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1H
  * If a post's date cannot be determined at all (neither from the listing
  * nor the post's own page), it is SKIPPED as "date unknown" - we never guess.
  *
- * Save condition (per company): at least one name in ownerNames OR a
- * businessName is enough (not both required). City is just a bonus field.
+ * Save condition (per company): at least one of ownerNames OR
+ * businessName is enough - not both required. City is just a bonus field.
  * Business-relevance filter: non-business content (movies/entertainment/
  * general-news) is automatically filtered out by the AI.
  * Partnership case: ownerNames is an ARRAY, so 2+ owners can appear.
  * Multi-company case: a single post/article can yield multiple companies
  * (e.g. roundup articles) as separate entries - they are never mixed together.
  */
-async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress, onPercent, onStats }) {
+async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }) {
   const log = (msg) => onProgress && onProgress(msg);
-  const setPercent = (p) => onPercent && onPercent(Math.min(99, Math.max(0, Math.round(p))));
-  const emitStats = (stats) => onStats && onStats(stats);
 
-  setPercent(1);
   log(`Loading category page: ${categoryUrl}`);
   const { html: page1Html } = await fetchWithAutoDetect(categoryUrl);
 
-  setPercent(5);
   log(`Target date range: ${formatDateForLog(startDate)} to ${formatDateForLog(endDate)}, starting to crawl pages...`);
   const candidates = await collectPostsInDateRange({ categoryUrl, startDate, endDate, page1Html, log });
 
-  setPercent(15);
-  emitStats({ totalFound: candidates.length, totalToCheck: 0, checked: 0, withData: 0, withoutData: 0 });
   if (candidates.length === 0) {
-    setPercent(100);
-    emitStats({ totalFound: 0, totalToCheck: 0, checked: 0, withData: 0, withoutData: 0 });
     log(`No posts found around this date range.`);
     return {
       totalPostsFound: 0,
@@ -223,7 +209,6 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress, 
   }
 
   log(`${targetLinks.length} posts will be processed for this date range`);
-  emitStats({ totalFound: candidates.length, totalToCheck: targetLinks.length, checked: 0, withData: 0, withoutData: 0 });
 
   // Process each post: fetch -> confirm actual date -> extract content -> AI extract -> check conditions
   const skipReasons = {
@@ -235,139 +220,92 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress, 
     dateUnknown: 0,
   };
   const sampleErrors = [];
-  let checkedCount = 0;
-  let withDataCount = 0;
 
-  const processed = await runWithLimit(
-    targetLinks,
-    config.concurrency,
-    async ({ url: postUrl }) => {
-      let html;
-      try {
-        const result = await fetchWithAutoDetect(postUrl);
-        html = result.html;
-      } catch (err) {
-        skipReasons.fetchError++;
-        if (sampleErrors.length < 3) sampleErrors.push(`Fetch failed (${postUrl}): ${err.message}`);
-        return null;
-      }
+  startProgress(targetLinks.length);
 
-      const article = extractArticle(html, postUrl);
-
-      if (!article.textContent || article.textContent.length < 50) {
-        skipReasons.noContent++;
-        return null;
-      }
-
-      // FINAL date check - using the actual publish-date from the post's
-      // own page (the category listing's date-hint was just an estimate,
-      // this is the real one)
-      const actualDate = parseDateSafe(article.publishDate);
-      if (!actualDate) {
-        skipReasons.dateUnknown++;
-        return null; // couldn't confirm the date - we never guess, safely skipped
-      }
-      if (actualDate < startDate || actualDate > endDate) {
-        skipReasons.outOfDateRange++;
-        return null;
-      }
-
-      let companies;
-      try {
-        companies = await extractEntities(article); // returns an ARRAY - each company is a separate entry
-      } catch (err) {
-        skipReasons.aiError++;
-        if (sampleErrors.length < 3) sampleErrors.push(`AI extraction failed (${postUrl}): ${err.message}`);
-        return null;
-      }
-
-      // SAVE CONDITION (per company): at least ONE of owner name OR business
-      // name is enough (not both required). Whichever field is missing is
-      // simply left blank. A single post/article can qualify MULTIPLE
-      // companies (e.g. a roundup article) - each becomes its own separate entry.
-      const validCompanies = (companies || []).filter(
-        (c) => (c.ownerNames && c.ownerNames.length > 0) || c.businessName
-      );
-
-      if (validCompanies.length === 0) {
-        skipReasons.noEntities++;
-        return null;
-      }
-
-      // Phone/Email enrichment, in two steps - nothing here uses AI credits,
-      // and whatever isn't found anywhere simply stays null (never guessed):
-      //
-      // Step 1 (new): if the company has (or we can discover) an official
-      // website, visit it directly with the existing Playwright setup and
-      // scrape the homepage + Contact/About/Team/Support/Privacy pages for
-      // publicly available emails/phones (mailto:/tel: links + visible text).
-      // This is the most reliable source when it works, since it's the
-      // company's own site rather than a search-engine guess.
-      //
-      // Step 2 (existing fallback): if a website wasn't identifiable, or the
-      // site visit still left a field blank, fall back to the original free
-      // DuckDuckGo/Bing search-based lookup.
-      for (const c of validCompanies) {
-        if (!c.businessName && !c.website) continue;
-        if (c.phone && c.email) continue; // already fully known from the article text
-
-        // Identify the official website: prefer what the article itself
-        // said, otherwise make a best-effort search-based guess.
-        let website = normalizeWebsiteUrl(c.website);
-        if (!website && c.businessName) {
-          try {
-            website = await findOfficialWebsite({ businessName: c.businessName, city: c.city });
-          } catch {
-            /* discovery failed - website stays null, step 2 below can still run */
-          }
-        }
-        if (website) c.website = website;
-
-        if (website && (!c.phone || !c.email)) {
-          try {
-            const siteResult = await extractContactFromWebsite(website);
-            if (!c.email && siteResult.email) c.email = siteResult.email;
-            if (!c.phone && siteResult.phone) c.phone = siteResult.phone;
-          } catch {
-            /* site visit failed - just leave the field(s) blank, fall through to step 2 */
-          }
+  let processed;
+  try {
+    processed = await runWithLimit(
+      targetLinks,
+      config.concurrency,
+      async ({ url: postUrl }) => {
+        let html;
+        try {
+          const result = await fetchWithAutoDetect(postUrl);
+          html = result.html;
+        } catch (err) {
+          skipReasons.fetchError++;
+          if (sampleErrors.length < 3) sampleErrors.push(`Fetch failed (${postUrl}): ${err.message}`);
+          return null;
         }
 
-        if ((!c.phone || !c.email) && c.businessName) {
-          try {
-            const found = await enrichContact({ businessName: c.businessName, city: c.city });
-            if (!c.phone && found.phone) c.phone = found.phone;
-            if (!c.email && found.email) c.email = found.email;
-          } catch {
-            /* enrichment lookup failed - just leave the field(s) blank */
-          }
-        }
-      }
+        const article = extractArticle(html, postUrl);
 
-      return validCompanies.map((c) => ({
-        ownerNames: c.ownerNames,
-        businessName: c.businessName,
-        city: c.city,
-        website: c.website || null,
-        phone: c.phone,
-        email: c.email,
-        publishDate: formatDateForLog(actualDate),
-        sourceUrl: postUrl,
-      }));
-    },
-    (doneCount, total, result) => {
-      setPercent(15 + (doneCount / total) * 84); // 15% -> 99% across this phase
-      checkedCount = doneCount;
-      if (Array.isArray(result) && result.length > 0) withDataCount++;
-      emitStats({
-        totalFound: candidates.length,
-        totalToCheck: total,
-        checked: checkedCount,
-        withData: withDataCount,
-        withoutData: checkedCount - withDataCount,
-      });
-    }
-  );
+        if (!article.textContent || article.textContent.length < 50) {
+          skipReasons.noContent++;
+          return null;
+        }
+
+        // FINAL date check - using the actual publish-date from the post's
+        // own page (the category listing's date-hint was just an estimate,
+        // this is the real one)
+        const actualDate = parseDateSafe(article.publishDate);
+        if (!actualDate) {
+          skipReasons.dateUnknown++;
+          return null; // couldn't confirm the date - we never guess, safely skipped
+        }
+        if (actualDate < startDate || actualDate > endDate) {
+          skipReasons.outOfDateRange++;
+          return null;
+        }
+
+        let companies;
+        try {
+          companies = await extractEntities(article); // returns an ARRAY - each company is a separate entry
+        } catch (err) {
+          skipReasons.aiError++;
+          if (sampleErrors.length < 3) sampleErrors.push(`AI extraction failed (${postUrl}): ${err.message}`);
+          return null;
+        }
+
+        // SAVE CONDITION (per company): at least ONE of owner name OR business
+        // name is enough (not both required). Whichever field is missing is
+        // simply left blank. A single post/article can qualify MULTIPLE
+        // companies (e.g. a roundup article) - each becomes its own separate entry.
+        const validCompanies = (companies || []).filter(
+          (c) => (c.ownerNames && c.ownerNames.length > 0) || c.businessName
+        );
+
+        if (validCompanies.length === 0) {
+          skipReasons.noEntities++;
+          return null;
+        }
+
+        // Free, best-effort contact enrichment (DuckDuckGo search + regex,
+        // no API key, no extra AI cost) - only for companies missing
+        // phone/email after the article-based extraction above.
+        const enriched = await Promise.all(
+          validCompanies.map(async (c) => {
+            const contact = await enrichContactInfo(c, log);
+            return { ...c, phone: contact.phone, email: contact.email };
+          })
+        );
+
+        return enriched.map((c) => ({
+          ownerNames: c.ownerNames,
+          businessName: c.businessName,
+          city: c.city,
+          phone: c.phone,
+          email: c.email,
+          publishDate: formatDateForLog(actualDate),
+          sourceUrl: postUrl,
+        }));
+      },
+      incrementProgress
+    );
+  } finally {
+    finishProgress();
+  }
 
   const finalEntries = processed
     .filter((result) => Array.isArray(result)) // removes both null (skipped) and {error} entries
@@ -405,7 +343,6 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress, 
       `date unknown (skipped, never guessed): ${skipReasons.dateUnknown}`
   );
   sampleErrors.forEach((e) => log(`ERROR SAMPLE: ${e}`));
-  onPercent && onPercent(100);
 
   return {
     totalPostsFound: postsFoundInRange,
