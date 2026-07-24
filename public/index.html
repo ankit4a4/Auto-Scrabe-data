@@ -421,6 +421,24 @@
       </table>
       <div class="no-results" id="noResults">No data yet. Run a scrape or click "Refresh Saved Results".</div>
     </div>
+
+    <div class="results-header">
+      <h2>Skipped Posts <span style="font-weight:normal;font-size:0.85em;color:#888;">(why a post did not appear above)</span></h2>
+    </div>
+
+    <div class="table-wrap">
+      <table id="skippedTable" style="display:none">
+        <thead>
+          <tr>
+            <th>Reason</th>
+            <th>Detail</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody id="skippedBody"></tbody>
+      </table>
+      <div class="no-results" id="noSkipped">No skipped posts to show yet.</div>
+    </div>
   </div>
 </div>
 
@@ -519,6 +537,38 @@
     `).join('');
   }
 
+  const REASON_LABELS = {
+    fetchError: "Page failed to load",
+    noContent: "No readable content found",
+    dateUnknown: "Could not determine publish date",
+    outOfDateRange: "Published outside the selected date range",
+    aiError: "AI extraction failed",
+    noEntities: "No owner/business name found in the article",
+  };
+
+  function renderSkippedPosts(skippedPosts) {
+    const table = document.getElementById('skippedTable');
+    const body = document.getElementById('skippedBody');
+    const noSkipped = document.getElementById('noSkipped');
+
+    if (!skippedPosts || skippedPosts.length === 0) {
+      table.style.display = 'none';
+      noSkipped.style.display = 'block';
+      return;
+    }
+
+    table.style.display = 'table';
+    noSkipped.style.display = 'none';
+
+    body.innerHTML = skippedPosts.map(s => `
+      <tr>
+        <td>${escapeHtml(REASON_LABELS[s.reason] || s.reason)}</td>
+        <td>${escapeHtml(s.detail || '')}</td>
+        <td><a class="source-link" href="${s.url}" target="_blank">view →</a></td>
+      </tr>
+    `).join('');
+  }
+
   async function runScrape() {
     const categoryUrl = document.getElementById('categoryUrl').value.trim();
     const startDate = document.getElementById('startDate').value;
@@ -567,8 +617,15 @@
         `From ${startDate} to ${endDate}, we found ${data.totalPostsFound} post(s). ` +
         `Owner Name or Business Name was found in ${withData} of them, ` +
         `and not found in ${withoutData} of them.`;
-      renderLogs([summaryMessage]);
+      // IMPORTANT: previously this called renderLogs([summaryMessage]), which
+      // discarded the full backend `logs` array (including the per-post
+      // "[reason] url - detail" skip lines) and only ever showed this one
+      // summary line - so skipped-post details never showed up anywhere in
+      // the dashboard even though the backend was sending them. Now the full
+      // log list is shown, with the summary pinned at the top.
+      renderLogs([summaryMessage, ...(data.logs || [])]);
       renderTable(data.entries);
+      renderSkippedPosts(data.skippedPosts);
     } catch (err) {
       setStatus('done', 'done');
       renderLogs(['This website is fully secured and could not be scanned. Please try a different website or date range.']);

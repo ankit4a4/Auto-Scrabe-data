@@ -1,7 +1,42 @@
 const { getNewPage } = require("./browserManager");
-const { extractPostLinksWithDates } = require("./linkExtractor");
+const { extractPostLinksWithDates, CONTAINER_LINK_SELECTOR } = require("./linkExtractor");
 const { parseDateSafe } = require("../utils/dateUtils");
 const config = require("../config");
+
+// Common cookie-consent / GDPR-banner "accept" buttons. These often sit
+// directly on top of the "Load More"/"Next" control and silently block
+// Playwright's click (the click "succeeds" on the overlay, not the real
+// button) - so we try to dismiss them once before pagination begins.
+const COOKIE_DISMISS_SELECTORS = [
+  "#onetrust-accept-btn-handler",
+  "[id*='cookie'] button:has-text('Accept')",
+  "[class*='cookie'] button:has-text('Accept')",
+  "button:has-text('Accept All')",
+  "button:has-text('Accept all')",
+  "button:has-text('I Agree')",
+  "button:has-text('I agree')",
+  "button:has-text('Got it')",
+  "[aria-label='Close']",
+  "[class*='consent'] button:has-text('Accept')",
+];
+
+async function dismissCookieBanner(page, log) {
+  for (const selector of COOKIE_DISMISS_SELECTORS) {
+    try {
+      const btn = page.locator(selector).first();
+      const visible = await btn.isVisible({ timeout: 500 }).catch(() => false);
+      if (visible) {
+        await btn.click({ timeout: 2000 }).catch(() => {});
+        log && log(`Dismissed a cookie/consent banner via "${selector}"`);
+        await page.waitForTimeout(300);
+        return true;
+      }
+    } catch {
+      /* selector not present, try next */
+    }
+  }
+  return false;
+}
 
 // "Load More" pattern (new content is APPENDED after existing content)
 const LOAD_MORE_SELECTORS = [
@@ -84,6 +119,8 @@ async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProg
       /* persistent background activity - ignore, proceed anyway */
     }
 
+    await dismissCookieBanner(page, log);
+
     for (let step = 0; step <= maxSteps; step++) {
       const html = await page.content();
       const links = extractPostLinksWithDates(html, categoryUrl);
@@ -137,16 +174,21 @@ async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProg
           // Wait for content to change - the post-links signature changing,
           // or up to 5 seconds (whichever comes first). This works for both
           // append-style and replace-style pagination.
+          // IMPORTANT: this selector must match extractPostLinksWithDates's
+          // own container logic (CONTAINER_LINK_SELECTOR), otherwise a real
+          // content change on a site using e.g. ".post-card"/".entry-item"
+          // wrappers would look "unchanged" here and pagination would stop
+          // early even though new posts genuinely loaded.
           contentActuallyChanged = await page
             .waitForFunction(
-              (prevSignature) => {
-                const articles = document.querySelectorAll("article a, .post a, .entry a");
-                const current = Array.from(articles)
+              ({ prevSignature, selector }) => {
+                const links = document.querySelectorAll(selector);
+                const current = Array.from(links)
                   .map((a) => a.href)
                   .join("|");
                 return current !== prevSignature && current.length > 0;
               },
-              signatureBefore,
+              { prevSignature: signatureBefore, selector: CONTAINER_LINK_SELECTOR },
               { timeout: 5000 }
             )
             .then(() => true)
@@ -166,8 +208,39 @@ async function clickThroughPagination({ categoryUrl, startDate, maxSteps, onProg
       );
 
       if (!clicked) {
-        log(`No "Load More"/"Next" control found after step ${step + 1} - pagination appears to have ended`);
-        break;
+        // No button/link control found at all - this can also mean the site
+        // uses pure scroll-triggered infinite loading (new posts appear as
+        // the user scrolls down, with no "Load More"/"Next" element ever
+        // present). Try scrolling to the bottom once and see if that alone
+        // brings in new content before giving up.
+        log(`No "Load More"/"Next" control found at step ${step + 1} - trying scroll-triggered loading instead`);
+
+        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+
+        const scrollChanged = await page
+          .waitForFunction(
+            ({ prevSignature, selector }) => {
+              const links = document.querySelectorAll(selector);
+              const current = Array.from(links)
+                .map((a) => a.href)
+                .join("|");
+              return current !== prevSignature && current.length > 0;
+            },
+            { prevSignature: signatureBefore, selector: CONTAINER_LINK_SELECTOR },
+            { timeout: 4000 }
+          )
+          .then(() => true)
+          .catch(() => false);
+
+        if (!scrollChanged) {
+          log(`Scrolling didn't load new content either - pagination appears to have ended`);
+          break;
+        }
+
+        log(`Scroll-triggered loading brought in new content, continuing`);
+        await page.waitForTimeout(700);
+        stepsDone++;
+        continue;
       }
 
       if (!contentActuallyChanged) {

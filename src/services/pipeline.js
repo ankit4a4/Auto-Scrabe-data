@@ -110,14 +110,43 @@ async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1H
       // also yields nothing new, we assume pagination has truly ended.
       if (pageNum === 2) {
         log(`No new posts found via Page 2 URL - checking for JS-driven pagination (Load More/Next button)...`);
-        try {
-          const { candidates: clickCandidates, stepsDone } = await clickThroughPagination({
-            categoryUrl,
-            startDate,
-            maxSteps: config.maxLoadMoreClicks,
-            onProgress: log,
-          });
 
+        // Up to 2 attempts. A single transient failure (page still
+        // settling, a cookie-banner briefly covering the button, a slow
+        // first click) used to be treated as "pagination has ended",
+        // silently losing every post beyond page 1. One retry with a short
+        // backoff filters out transient failures without looping forever
+        // on genuinely-ended pagination.
+        const maxAttempts = 2;
+        let stepsDone = 0;
+        let clickCandidates = [];
+        let lastErr = null;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const result = await clickThroughPagination({
+              categoryUrl,
+              startDate,
+              maxSteps: config.maxLoadMoreClicks,
+              onProgress: log,
+            });
+            stepsDone = result.stepsDone;
+            clickCandidates = result.candidates;
+            lastErr = null;
+            break;
+          } catch (err) {
+            lastErr = err;
+            log(`Click-based pagination attempt ${attempt} failed: ${err.message}`);
+            if (attempt < maxAttempts) {
+              await new Promise((r) => setTimeout(r, 1500));
+              log(`Retrying click-based pagination (attempt ${attempt + 1}/${maxAttempts})...`);
+            }
+          }
+        }
+
+        if (lastErr) {
+          log(`Click-based pagination failed after ${maxAttempts} attempts: ${lastErr.message}`);
+        } else {
           let newFromExpansion = 0;
           for (const { url, dateHint } of clickCandidates) {
             if (seen.has(url)) continue;
@@ -135,8 +164,6 @@ async function collectPostsInDateRange({ categoryUrl, startDate, endDate, page1H
           } else {
             log(`No click-based pagination control found - pagination appears to have ended`);
           }
-        } catch (err) {
-          log(`Error while trying click-based pagination: ${err.message}`);
         }
       } else {
         log(`No new posts found on page ${pageNum}, pagination appears to have ended`);
@@ -196,6 +223,7 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
       postsWithoutData: 0,
       entries: [],
       skipReasons: {},
+      skippedPosts: [],
     };
   }
 
@@ -219,6 +247,11 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
     outOfDateRange: 0,
     dateUnknown: 0,
   };
+  // Unlike skipReasons (aggregate counts only), this keeps the actual URL +
+  // reason + a short detail for EVERY skipped post, so a specific post can
+  // be traced back without manual digging (e.g. "why did post X not show up
+  // in my results?").
+  const skippedPosts = [];
   const sampleErrors = [];
 
   startProgress(targetLinks.length);
@@ -235,6 +268,7 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
           html = result.html;
         } catch (err) {
           skipReasons.fetchError++;
+          skippedPosts.push({ url: postUrl, reason: "fetchError", detail: err.message });
           if (sampleErrors.length < 3) sampleErrors.push(`Fetch failed (${postUrl}): ${err.message}`);
           return null;
         }
@@ -243,6 +277,7 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
 
         if (!article.textContent || article.textContent.length < 50) {
           skipReasons.noContent++;
+          skippedPosts.push({ url: postUrl, reason: "noContent", detail: "Page loaded but no readable article text was extracted" });
           return null;
         }
 
@@ -252,10 +287,20 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
         const actualDate = parseDateSafe(article.publishDate);
         if (!actualDate) {
           skipReasons.dateUnknown++;
+          skippedPosts.push({
+            url: postUrl,
+            reason: "dateUnknown",
+            detail: `Could not parse a publish date (raw value found: ${JSON.stringify(article.publishDate)})`,
+          });
           return null; // couldn't confirm the date - we never guess, safely skipped
         }
         if (actualDate < startDate || actualDate > endDate) {
           skipReasons.outOfDateRange++;
+          skippedPosts.push({
+            url: postUrl,
+            reason: "outOfDateRange",
+            detail: `Actual publish date was ${formatDateForLog(actualDate)}, outside ${formatDateForLog(startDate)}–${formatDateForLog(endDate)}`,
+          });
           return null;
         }
 
@@ -264,6 +309,7 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
           companies = await extractEntities(article); // returns an ARRAY - each company is a separate entry
         } catch (err) {
           skipReasons.aiError++;
+          skippedPosts.push({ url: postUrl, reason: "aiError", detail: err.message });
           if (sampleErrors.length < 3) sampleErrors.push(`AI extraction failed (${postUrl}): ${err.message}`);
           return null;
         }
@@ -278,15 +324,21 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
 
         if (validCompanies.length === 0) {
           skipReasons.noEntities++;
+          skippedPosts.push({
+            url: postUrl,
+            reason: "noEntities",
+            detail: "Article qualified (date in range, content readable) but the AI found no explicit owner/founder/CEO name or business name to extract",
+          });
           return null;
         }
+
 
         // Free, best-effort contact enrichment (DuckDuckGo search + regex,
         // no API key, no extra AI cost) - only for companies missing
         // phone/email after the article-based extraction above.
         const enriched = await Promise.all(
           validCompanies.map(async (c) => {
-            const contact = await enrichContactInfo(c, log);
+            const contact = await enrichContactInfo(c);
             return { ...c, phone: contact.phone, email: contact.email };
           })
         );
@@ -344,6 +396,15 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
   );
   sampleErrors.forEach((e) => log(`ERROR SAMPLE: ${e}`));
 
+  // Log every skipped post's URL individually (not just the aggregate
+  // counts above) - this is what lets a specific "why wasn't this post in
+  // my results?" question be answered directly from the logs/response,
+  // instead of having to guess and manually re-check post URLs one by one.
+  if (skippedPosts.length > 0) {
+    log(`--- Skipped posts (${skippedPosts.length}) ---`);
+    skippedPosts.forEach((s) => log(`  [${s.reason}] ${s.url} - ${s.detail}`));
+  }
+
   return {
     totalPostsFound: postsFoundInRange,
     totalCandidatesChecked: targetLinks.length,
@@ -352,6 +413,7 @@ async function runScrapePipeline({ categoryUrl, startDate, endDate, onProgress }
     postsWithoutData,
     entries: finalEntries,
     skipReasons,
+    skippedPosts,
   };
 }
 

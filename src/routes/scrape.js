@@ -145,6 +145,7 @@ router.post("/scrape", async (req, res) => {
       postsWithoutData: result.postsWithoutData,
       entries: result.entries,
       totalInDatabase: savedAll.length,
+      skippedPosts: result.skippedPosts,
       logs,
     });
   } catch (err) {

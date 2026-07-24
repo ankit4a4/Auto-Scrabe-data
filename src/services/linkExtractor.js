@@ -44,6 +44,16 @@ function isExcluded(url) {
   return EXCLUDE_PATTERNS.some((pattern) => pattern.test(url));
 }
 
+// Shared with loadMoreExpander.js - the browser-side "did content change
+// after clicking Load More/Next" check MUST use the exact same selector as
+// our real link extraction below, otherwise a site whose posts sit inside
+// e.g. ".post-card"/".entry-item" (matched by the broad [class*='post-']
+// pattern here) would look "unchanged" to the click-detector even though
+// new posts genuinely loaded - causing pagination to stop too early.
+const CONTAINER_LINK_SELECTOR =
+  "article a, .post a, .entry a, .post-item a, .post-card a, .blog-post a, " +
+  "[class*='post-'] a, [class*='entry-'] a, [class*='article-'] a";
+
 function isStaticPage(urlObj) {
   const segments = urlObj.pathname.split("/").filter(Boolean);
   // Only exclude if there's exactly one path segment and it's a known static-page slug
@@ -185,4 +195,4 @@ function extractPostLinks(html, categoryUrl) {
   return extractPostLinksWithDates(html, categoryUrl).map((item) => item.url);
 }
 
-module.exports = { extractPostLinks, extractPostLinksWithDates };
+module.exports = { extractPostLinks, extractPostLinksWithDates, CONTAINER_LINK_SELECTOR };
