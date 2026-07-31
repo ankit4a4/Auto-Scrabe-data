@@ -353,7 +353,7 @@
     </div>
 
     <button class="run-btn" id="runBtn" onclick="runScrape()">Run Scrape</button>
-    <button class="secondary-btn" onclick="clearAndLoadResults()">Refresh Saved Results</button>
+    <button class="secondary-btn" onclick="refreshSavedResults()">Refresh Saved Results</button>
     <button class="secondary-btn" onclick="exportExcel()">Download Excel Export</button>
 
     <div class="hint">
@@ -648,7 +648,7 @@
 
   // Clears the saved JSON data, then refreshes the view. Data is only meant
   // to persist for the current page session - it resets whenever the page
-  // is reloaded, or when this is triggered manually via the button below.
+  // is reloaded. Used only on page load (silent - no download prompt).
   async function clearAndLoadResults() {
     try {
       await fetch('/api/clear-results', { method: 'POST' });
@@ -671,6 +671,28 @@
       document.getElementById('statSaved').textContent = '—';
       await loadResults(); // re-fetches /api/results (now empty) and re-renders the (now empty) table + statTotalDb
     }, 800); // small delay so the browser has started the file download before we touch the page
+  }
+
+  // "Refresh Saved Results" button:
+  //  - If there IS saved data -> download it as Excel first, THEN clean the
+  //    dashboard (nothing gets lost silently, it's downloaded before erasing).
+  //  - If there is NO saved data -> just clean the dashboard, no Excel file
+  //    is triggered (nothing to export).
+  async function refreshSavedResults() {
+    let total = 0;
+    try {
+      const res = await fetch('/api/results');
+      const data = await res.json();
+      total = data.total || 0;
+    } catch (err) {
+      /* couldn't check - fall through to a plain clear below */
+    }
+
+    if (total > 0) {
+      exportExcel(); // downloads the Excel file, then clears + reloads the view itself
+    } else {
+      await clearAndLoadResults(); // nothing to export - just clean the dashboard
+    }
   }
 
   // Data resets on every page load/reload - it only persists within the
