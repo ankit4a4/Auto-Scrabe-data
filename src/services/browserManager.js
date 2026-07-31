@@ -5,6 +5,14 @@ const { chromium } = require("playwright");
 
 let browserPromise = null;
 
+// Resource types that are pure "visual weight" - we never read pixels, only
+// the DOM/text/links, so these are safe to block. This alone typically cuts
+// per-page memory + bandwidth drastically (image-heavy news sites especially).
+// CSS and JS are deliberately NOT blocked - button visibility checks
+// (isVisible in loadMoreExpander.js, cookie-banner dismissal) depend on CSS
+// being applied, and JS-rendered content depends on scripts running.
+const BLOCKED_RESOURCE_TYPES = new Set(["image", "media", "font"]);
+
 async function getBrowser() {
   if (!browserPromise) {
     browserPromise = chromium.launch({
@@ -21,6 +29,15 @@ async function getNewPage() {
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
   });
+
+  await context.route("**/*", (route) => {
+    const resourceType = route.request().resourceType();
+    if (BLOCKED_RESOURCE_TYPES.has(resourceType)) {
+      return route.abort();
+    }
+    return route.continue();
+  });
+
   const page = await context.newPage();
   return { page, context };
 }
